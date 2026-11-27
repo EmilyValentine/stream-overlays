@@ -1,0 +1,12 @@
+{
+  "name": "stream-overlays",
+  "version": "1.0.0",
+  "description": "Stream overlays for TikTok LIVE Studio and OBS",
+  "private": true,
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
