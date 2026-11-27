@@ -114,6 +114,9 @@
   .fill::after{content:"";position:absolute;inset:0;border-radius:99px;
     background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.55) 50%,transparent 70%);background-size:220% 100%;animation:sweep 2.4s linear infinite}
   @keyframes sweep{from{background-position:120% 0}to{background-position:-120% 0}}
+  .pop{position:absolute;right:0;top:-34px;font:800 22px/1 Fredoka,sans-serif;color:var(--gold);text-shadow:0 0 12px rgba(255,209,92,.8),0 2px 4px rgba(0,0,0,.6);
+    pointer-events:none;animation:popUp 2.6s cubic-bezier(.2,.8,.2,1) forwards}
+  @keyframes popUp{0%{opacity:0;transform:translateY(14px) scale(.8)}15%{opacity:1;transform:translateY(0) scale(1.08)}70%{opacity:1;transform:translateY(-18px) scale(1)}100%{opacity:0;transform:translateY(-34px)}}
   .flag{position:absolute;right:6px;top:50%;transform:translateY(-50%);font-size:11px;line-height:1}
   @media (prefers-reduced-motion:reduce){*{animation-duration:0s!important}}
 </style>
@@ -274,7 +277,8 @@
     [...dots.children].forEach((d,k) => d.classList.toggle('on', k === i));
   }
   show(0);
-  setInterval(() => { idx = (idx + 1) % GIFTS.length; show(idx); }, SPEED);
+  let rotTimer = setInterval(() => { idx = (idx + 1) % GIFTS.length; show(idx); }, SPEED);
+  function jumpTo(i){ idx = i; show(i); clearInterval(rotTimer); rotTimer = setInterval(() => { idx = (idx + 1) % GIFTS.length; show(idx); }, SPEED); }
 
 
   /* ---------- Power League goal ---------- */
@@ -289,6 +293,51 @@
     val.textContent = `ENDS ${ENDS.toUpperCase()}`;
     setTimeout(() => fill.style.width = '100%', 300);
   }
+  /* ---------- live bridge ----------
+     When live-bridge.mjs is running on this PC, points, goal and rank update in real time.
+     Disable with ?live=0. Point at another address with ?bridge=http://localhost:3000 */
+  const BRIDGE = q.get('bridge') || (/^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? location.origin : 'http://localhost:3000');
+  let shownTotal = null;
+  function setGoal(total, goal, rank){
+    if (!(goal > 0)) return;
+    const rankTxt = rank ? `#${fmt(rank)} · ` : '';
+    val.textContent = `${rankTxt}${fmt(Math.round(total))} / ${fmt(goal)} pts`;
+    fill.style.width = Math.max(4, Math.min(100, total / goal * 100)) + '%';
+  }
+  function countTo(target, goal, rank){
+    const from = shownTotal ?? target;
+    const start = performance.now(), dur = from === target ? 0 : 1200;
+    const step = (t) => {
+      const k = dur ? Math.min(1, (t - start) / dur) : 1;
+      const eased = 1 - Math.pow(1 - k, 3);
+      setGoal(from + (target - from) * eased, goal, rank);
+      if (k < 1) requestAnimationFrame(step); else shownTotal = target;
+    };
+    requestAnimationFrame(step);
+  }
+  function popPoints(text){
+    const el = document.createElement('div');
+    el.className = 'pop';
+    el.textContent = text;
+    document.querySelector('.goal').appendChild(el);
+    setTimeout(() => el.remove(), 2600);
+  }
+  if (q.get('live') !== '0' && 'EventSource' in window){
+    try {
+      const es = new EventSource(BRIDGE + '/events');
+      es.addEventListener('state', (e) => {
+        const st = JSON.parse(e.data), p = st.points;
+        if (p.goal > 0) countTo(p.total, p.goal, p.rank);
+      });
+      es.addEventListener('gift', (e) => {
+        const g = JSON.parse(e.data);
+        popPoints(`+${fmt(g.points)} pts`);
+        const i = GIFTS.findIndex((x) => x.name.toLowerCase() === String(g.name).toLowerCase());
+        if (g.fest && i >= 0) jumpTo(i);
+      });
+    } catch { /* bridge not available: keep the link settings */ }
+  }
+
   /* ---------- auto-update ----------
      Every 60 seconds, checks version.txt next to this file. When it changes, the page
      reloads itself with ?v=<new version> so no cached copy is reused. */

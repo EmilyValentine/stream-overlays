@@ -5,9 +5,14 @@
   "private": true,
   "scripts": {
     "start": "node server.js",
-    "probe": "node rank-probe.mjs"
+    "probe": "node rank-probe.mjs",
+    "live": "node live-bridge.mjs"
   },
   "engines": {
     "node": ">=22"
+  },
+  "dependencies": {
+    "playwright-core": "^1",
+    "tiktok-live-connector": "^2.5.0"
   }
 }

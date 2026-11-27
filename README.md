@@ -48,6 +48,26 @@ Add these to the end of the link, for example `livefest-banner.html?points=849&g
 | `speed` | Seconds each gift is shown | `4` |
 | `bg` | `transparent`, `green` or `dark` | `transparent` |
 
+## Live bridge (your own TikTok LIVE feed)
+
+`live-bridge.mjs` gives the banner live LIVE Fest points without any third-party service or API key.
+It opens your TikTok LIVE page in its own Chrome window, so Chrome does TikTok's request signing itself,
+then decodes the live data Chrome receives and pushes it to the overlays.
+
+Requires Node.js 22+ and Google Chrome (or Microsoft Edge).
+
+1. Double-click `start-live.bat`. The first run installs dependencies and asks for your TikTok username.
+2. A Chrome window opens on your LIVE page. Log in there if TikTok asks (it remembers you). Leave it open; the video is blocked to save bandwidth.
+3. Open `http://localhost:3000/control`, enter your points, points needed and rank from the LIVE Fest screen, and click **Sync to banner**.
+4. In TikTok LIVE Studio use `http://localhost:3000/livefest-banner.html` as the Link source (1080 × 380).
+
+Points are counted as FEST gifts × 2 per coin and other gifts × 1 per coin, added to the synced total.
+Votes are not included, so sync from the app now and then. Messages that might contain rank information
+are saved to `bridge-log.jsonl`, and the control page flags any it spots.
+
+Private files (`config.json`, `bridge-log.jsonl`, `browser-profile/`) stay on your PC and are ignored by git.
+The bridge uses TikTok's website the way a viewer does; it is unofficial and may need updating if TikTok changes its site.
+
 ## LIVE Fest rank probe
 
 Finds out whether TikTok's live event feed includes your LIVE Fest rank. It connects through

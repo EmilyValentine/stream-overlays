@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live Bridge Control</title>
+<style>
+  :root{--pink:#ff2d7a;--cyan:#22f0ff;--violet:#8b5cff;--gold:#ffd15c;--bg:#120626;--card:rgba(255,255,255,.06);--line:rgba(255,255,255,.14);--muted:#b9acd8}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--bg);color:#fff;font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}
+  main{max-width:880px;margin:0 auto;padding:32px 20px 48px}
+  h1{margin:0;font-size:26px}
+  .sub{color:var(--muted);margin:4px 0 24px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media (max-width:720px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px}
+  .card h2{margin:0 0 12px;font-size:16px;letter-spacing:.02em}
+  .status{display:flex;align-items:center;gap:10px;font-weight:600}
+  .dot{width:12px;height:12px;border-radius:50%;background:#777;flex:none}
+  .dot.connected{background:#3ddc84;box-shadow:0 0 10px #3ddc84}
+  .dot.watching,.dot.browser,.dot.starting{background:var(--gold)}
+  .dot.error,.dot.offline{background:var(--pink)}
+  .msg{color:var(--muted);font-size:13px;margin-top:6px}
+  label{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
+  input{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:#0b0418;color:#fff;font:inherit}
+  input:focus{outline:2px solid var(--cyan);outline-offset:1px}
+  button{margin-top:14px;padding:10px 16px;border:0;border-radius:10px;font:600 15px system-ui,sans-serif;cursor:pointer;color:#fff;background:linear-gradient(90deg,var(--pink),var(--violet))}
+  button.ghost{background:transparent;border:1px solid var(--line)}
+  .big{font-size:30px;font-weight:800;line-height:1.1}
+  .row{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--line)}
+  .row:last-child{border-bottom:0}
+  .muted{color:var(--muted)}
+  .bar{height:10px;border-radius:99px;background:rgba(255,255,255,.1);overflow:hidden;margin-top:10px}
+  .fill{height:100%;width:0;background:linear-gradient(90deg,var(--pink),var(--violet),var(--cyan));transition:width .6s}
+  code{background:#000;padding:2px 6px;border-radius:6px;color:var(--cyan)}
+  .hint{font-size:13px;color:var(--muted);margin-top:8px}
+  .warn{color:var(--gold)}
+  .preview{margin-top:16px;aspect-ratio:1080/380;border-radius:12px;overflow:hidden;background:#000;border:1px solid var(--line)}
+  .preview iframe{width:100%;height:100%;border:0}
+</style>
+</head>
+<body>
+<main>
+  <h1>Live Bridge Control</h1>
+  <p class="sub">Your own TikTok LIVE feed for the stream overlays.</p>
+
+  <div class="grid">
+    <section class="card">
+      <h2>Connection</h2>
+      <div class="status"><span class="dot" id="dot"></span><span id="status">Connecting to the bridge…</span></div>
+      <div class="msg" id="message"></div>
+      <div class="msg" id="lastEvent"></div>
+    </section>
+
+    <section class="card">
+      <h2>LIVE Fest points</h2>
+      <div class="big" id="total">–</div>
+      <div class="muted" id="totalSub"></div>
+      <div class="bar"><div class="fill" id="fill"></div></div>
+      <div class="hint" id="rankLine"></div>
+    </section>
+
+    <section class="card">
+      <h2>Sync from the TikTok app</h2>
+      <p class="hint" style="margin-top:0">Copy these from your LIVE Fest screen. Syncing resets this stream's counter, because the app's total already includes everything so far.</p>
+      <form id="syncForm">
+        <label for="points">Current points</label>
+        <input id="points" type="number" min="0" inputmode="numeric" placeholder="e.g. 849" required>
+        <label for="needed">Points more to reach the advancing rank</label>
+        <input id="needed" type="number" min="0" inputmode="numeric" placeholder="e.g. 4191">
+        <label for="rank">Current rank (without #)</label>
+        <input id="rank" type="number" min="1" inputmode="numeric" placeholder="e.g. 816">
+        <button type="submit">Sync to banner</button>
+      </form>
+      <div class="hint" id="syncResult"></div>
+    </section>
+
+    <section class="card">
+      <h2>This stream</h2>
+      <div class="row"><span class="muted">Points earned</span><b id="sessionPts">0</b></div>
+      <div class="row"><span class="muted">Coins received</span><b id="sessionCoins">0</b></div>
+      <div class="row"><span class="muted">FEST gift coins</span><b id="festCoins">0</b></div>
+      <div class="row"><span class="muted">Gifts</span><b id="gifts">0</b></div>
+      <div class="row"><span class="muted">Likes</span><b id="likes">0</b></div>
+      <h2 style="margin-top:16px">Top gifters</h2>
+      <div id="gifters" class="muted">None yet</div>
+    </section>
+
+    <section class="card" style="grid-column:1/-1">
+      <h2>Banner</h2>
+      <p class="hint" style="margin-top:0">For live updates, use this link in TikTok LIVE Studio (Add source → Link, 1080 × 380):</p>
+      <code id="bannerLink"></code>
+      <div class="hint">Last gift: <span id="lastGift">none yet</span></div>
+      <div class="hint warn" id="rankHint"></div>
+      <button class="ghost" id="testBtn" type="button">Send a test FEST gift</button>
+      <span class="hint">Adds test points. Sync again afterwards to clear them.</span>
+      <div class="preview"><iframe id="preview" title="Banner preview"></iframe></div>
+    </section>
+  </div>
+</main>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const fmt = (n) => Number(n || 0).toLocaleString('en-US');
+  const STATUS = { starting: 'Starting', browser: 'Opening TikTok', watching: 'Waiting for live data', connected: 'Live data flowing', offline: 'Not capturing', error: 'Problem' };
+
+  const bannerUrl = new URL('livefest-banner.html', location.href).href;
+  $('bannerLink').textContent = bannerUrl;
+  $('preview').src = bannerUrl + '?bg=dark';
+
+  let prefilled = false;
+  function render(s) {
+    const b = s.bridge;
+    $('dot').className = 'dot ' + b.status;
+    $('status').textContent = STATUS[b.status] || b.status;
+    $('message').textContent = b.message || '';
+    $('lastEvent').textContent = b.lastEventAt ? 'Last data: ' + new Date(b.lastEventAt).toLocaleTimeString() : '';
+
+    const p = s.points;
+    $('total').textContent = fmt(p.total) + ' pts';
+    $('totalSub').textContent = `${fmt(p.start)} synced + ${fmt(p.session)} this stream`;
+    $('fill').style.width = p.goal > 0 ? Math.min(100, p.total / p.goal * 100) + '%' : '0%';
+    const toGo = Math.max(0, p.goal - p.total);
+    $('rankLine').textContent = [p.rank ? `Rank #${p.rank} (as of last sync)` : '', p.goal ? `${fmt(toGo)} to go of ${fmt(p.goal)}` : 'No goal set'].filter(Boolean).join(' · ');
+
+    if (!prefilled) {
+      prefilled = true;
+      if (p.start) $('points').value = p.start;
+      if (p.goal && p.start) $('needed').value = Math.max(0, p.goal - p.start);
+      if (p.rank) $('rank').value = p.rank;
+    }
+
+    $('sessionPts').textContent = fmt(p.session);
+    $('sessionCoins').textContent = fmt(s.session.coins);
+    $('festCoins').textContent = fmt(s.session.festCoins);
+    $('gifts').textContent = fmt(s.session.gifts);
+    $('likes').textContent = fmt(s.session.likes);
+    $('gifters').innerHTML = s.topGifters.length
+      ? s.topGifters.map((g, i) => `<div class="row"><span>${i + 1}. ${escapeHtml(g.nickname)}</span><b>${fmt(g.coins)} coins</b></div>`).join('')
+      : 'None yet';
+
+    const g = s.lastGift;
+    $('lastGift').textContent = g ? `${g.nickname} sent ${g.name} ×${g.count} (+${fmt(g.points)} pts${g.fest ? ', FEST' : ''})${g.test ? ' [test]' : ''}` : 'none yet';
+    $('rankHint').textContent = s.rankHint ? `Possible rank info spotted in ${s.rankHint.type}: "${s.rankHint.text}"` : '';
+  }
+
+  function escapeHtml(t) { return String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+  const es = new EventSource('/events');
+  es.addEventListener('state', (e) => render(JSON.parse(e.data)));
+  es.onerror = () => { $('dot').className = 'dot error'; $('status').textContent = 'Bridge not running'; $('message').textContent = 'Start it with start-live.bat'; };
+
+  $('syncForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const points = Number($('points').value) || 0;
+    const needed = $('needed').value === '' ? null : Number($('needed').value) || 0;
+    const body = { startPoints: points, rank: $('rank').value === '' ? '' : Number($('rank').value) };
+    if (needed !== null) body.goal = points + needed;
+    const r = await fetch('/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    $('syncResult').textContent = r.ok ? 'Synced. The banner updates right away.' : 'Sync failed.';
+  });
+
+  $('testBtn').addEventListener('click', () => fetch('/test/gift', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'FEST Energy', coins: 299, count: 1, user: 'Test viewer' }) }));
+</script>
+</body>
+</html>
