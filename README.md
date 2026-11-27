@@ -57,3 +57,7 @@ Finds out whether TikTok's live event feed includes your LIVE Fest rank. Run it 
 
 It listens for 15 minutes, prints anything rank-related as it arrives, and saves the details to `probe-log.jsonl`.
 The probe uses the unofficial `tiktok-live-connector` library; set `EULER_API_KEY` if the free signing tier is rate-limited.
+
+## Updates
+
+The banner checks `version.txt` every minute and reloads itself when it changes, so updates appear on stream within a few minutes without touching LIVE Studio. Bump `version.txt` with every change to the banner.

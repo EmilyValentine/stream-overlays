@@ -289,6 +289,27 @@
     val.textContent = `ENDS ${ENDS.toUpperCase()}`;
     setTimeout(() => fill.style.width = '100%', 300);
   }
+  /* ---------- auto-update ----------
+     Every 60 seconds, checks version.txt next to this file. When it changes, the page
+     reloads itself with ?v=<new version> so no cached copy is reused. */
+  let loadedVersion = q.get('v');
+  async function checkForUpdate(){
+    try {
+      const r = await fetch(new URL('version.txt?t=' + Date.now(), location.href), { cache: 'no-store' });
+      if (!r.ok) return;
+      const v = (await r.text()).trim();
+      if (!v) return;
+      if (loadedVersion === null) { loadedVersion = v; return; }
+      if (v !== loadedVersion){
+        const u = new URL(location.href);
+        u.searchParams.set('v', v);
+        location.replace(u.href);
+      }
+    } catch { /* offline or opened as a local file: keep showing the current version */ }
+  }
+  checkForUpdate();
+  setInterval(checkForUpdate, 60000);
+
   /* ---------- particles ---------- */
   const cv = document.getElementById('fx'), cx = cv.getContext('2d');
   const W = 1080, H = 380, DPR = Math.min(2, devicePixelRatio || 1) * 1.5;
