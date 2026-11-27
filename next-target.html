@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LIVE Fest Next Target</title>
+<!--
+  LIVE Fest "next target" widget — stream overlay
+  Browser / Link source size: 760 x 200 (scales to any size). Transparent background.
+
+  Live data: reads points, goal and rank from live-bridge.mjs when it is running.
+  Without the bridge, set values in the link:
+    points   Current LIVE Fest points             e.g. 849
+    goal     Points needed to reach the target    e.g. 5040
+    target   Target rank shown after "TO #"       (default: 200)
+    rank     Current rank (optional, shown small) e.g. 816
+    label    Small top label                      (default: LIVE FEST 26)
+    bg       transparent | green | dark           (default: transparent)
+    live=0   Ignore the bridge
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600;700&family=Outfit:wght@600;800;900&display=swap" rel="stylesheet">
+<style>
+  :root{--pink:#ff2d7a;--hot:#ff5fa2;--cyan:#22f0ff;--violet:#8b5cff;--gold:#ffd15c}
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:100%;height:100%;background:transparent;overflow:hidden}
+  body.bg-green{background:#00b140} body.bg-dark{background:#0b0614}
+  #stage{position:absolute;left:0;top:0;width:760px;height:200px;transform-origin:0 0}
+
+  .tags{position:absolute;left:150px;top:18px;display:flex;gap:8px}
+  .tag{font:800 15px/1 Outfit,sans-serif;letter-spacing:.08em;color:#fff;padding:6px 11px;border-radius:8px}
+  .tag.fest{background:linear-gradient(90deg,var(--pink),var(--violet))}
+  .tag.rank{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25)}
+  .tag.rank:empty{display:none}
+
+  .pill{position:absolute;left:62px;top:52px;width:676px;height:118px;border-radius:60px;
+    background:linear-gradient(100deg,#2a0a3d 0%,#1a0630 55%,#10082a 100%);
+    box-shadow:0 0 0 2px rgba(255,95,162,.55),0 0 26px rgba(255,45,122,.45),inset 0 1px 0 rgba(255,255,255,.12)}
+  .pill::after{content:"";position:absolute;inset:0;border-radius:60px;
+    background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.10) 45%,transparent 60%);background-size:250% 100%;
+    animation:sheen 4.5s ease-in-out infinite}
+  @keyframes sheen{0%{background-position:120% 0}60%,100%{background-position:-120% 0}}
+
+  .badge{position:absolute;left:14px;top:38px;width:150px;height:150px;border-radius:50%;
+    background:radial-gradient(circle at 35% 30%,#ff8fc0,var(--pink) 45%,#8a0f4a 100%);
+    box-shadow:0 0 0 5px #1a0630,0 0 0 8px rgba(255,95,162,.8),0 0 30px rgba(255,45,122,.7);display:grid;place-items:center;z-index:2}
+  .badge svg{width:84px;height:84px;filter:drop-shadow(0 3px 4px rgba(0,0,0,.4))}
+  .badge .c1{animation:rise 1.6s ease-in-out infinite}
+  .badge .c2{animation:rise 1.6s ease-in-out .2s infinite}
+  @keyframes rise{0%,100%{transform:translateY(4px);opacity:.75}50%{transform:translateY(-4px);opacity:1}}
+
+  .body{position:absolute;left:184px;top:66px;right:46px}
+  .kicker{font:800 17px/1 Outfit,sans-serif;letter-spacing:.26em;color:var(--hot)}
+  .line{margin-top:6px;display:flex;align-items:baseline;gap:12px;white-space:nowrap}
+  .num{font:700 52px/1 Fredoka,sans-serif;color:#fff;text-shadow:0 0 14px rgba(255,95,162,.6),0 2px 3px rgba(0,0,0,.5)}
+  .to{font:800 24px/1 Outfit,sans-serif;color:var(--hot)}
+  .target{font:900 44px/1 Outfit,sans-serif;color:#fff;font-style:italic}
+  .bar{position:absolute;left:184px;right:46px;top:146px;height:8px;border-radius:99px;background:rgba(255,255,255,.14);overflow:hidden}
+  .fill{height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--pink),var(--hot),var(--cyan));box-shadow:0 0 10px rgba(255,45,122,.8);transition:width 1.2s cubic-bezier(.2,.8,.2,1)}
+  .done .num{color:var(--gold)}
+  .pop{position:absolute;right:46px;top:20px;font:800 24px/1 Fredoka,sans-serif;color:var(--gold);text-shadow:0 0 12px rgba(255,209,92,.8);animation:popUp 2.4s ease forwards;pointer-events:none}
+  @keyframes popUp{0%{opacity:0;transform:translateY(12px)}15%{opacity:1;transform:none}70%{opacity:1;transform:translateY(-12px)}100%{opacity:0;transform:translateY(-26px)}}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important}}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="tags"><span class="tag fest" id="label">LIVE FEST 26</span><span class="tag rank" id="rankTag"></span></div>
+  <div class="pill"></div>
+  <div class="badge">
+    <svg viewBox="0 0 64 64" aria-hidden="true">
+      <path class="c1" d="M14 30 L32 14 L50 30" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+      <path class="c2" d="M14 48 L32 32 L50 48" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </div>
+  <div class="body" id="body">
+    <div class="kicker" id="kicker">NEXT TARGET</div>
+    <div class="line"><span class="num" id="num">–</span><span class="to">TO</span><span class="target" id="target">#200</span></div>
+  </div>
+  <div class="bar"><div class="fill" id="fill"></div></div>
+</div>
+<script>
+(() => {
+  const q = new URLSearchParams(location.search);
+  if (q.get('bg') === 'green') document.body.classList.add('bg-green');
+  if (q.get('bg') === 'dark') document.body.classList.add('bg-dark');
+  const stage = document.getElementById('stage');
+  const fit = () => { const s = Math.min(innerWidth / 760, innerHeight / 200); stage.style.transform = `translate(${(innerWidth - 760 * s) / 2}px,${(innerHeight - 200 * s) / 2}px) scale(${s})`; };
+  addEventListener('resize', fit); fit();
+
+  const fmt = (n) => Math.max(0, Math.round(n)).toLocaleString('en-US');
+  const $ = (id) => document.getElementById(id);
+  const TARGET = q.get('target') || '200';
+  $('label').textContent = (q.get('label') || 'LIVE FEST 26').toUpperCase();
+  $('target').textContent = '#' + TARGET;
+
+  let shownGap = null;
+  function render(total, goal, rank) {
+    $('rankTag').textContent = rank ? `NOW #${Number(rank).toLocaleString('en-US')}` : '';
+    if (!(goal > 0)) { $('num').textContent = '–'; return; }
+    const gap = Math.max(0, goal - total);
+    const done = gap === 0;
+    $('body').classList.toggle('done', done);
+    $('kicker').textContent = done ? 'TARGET REACHED' : 'NEXT TARGET';
+    $('fill').style.width = Math.max(3, Math.min(100, total / goal * 100)) + '%';
+    const from = shownGap ?? gap, start = performance.now(), dur = from === gap ? 0 : 1200;
+    const step = (t) => {
+      const k = dur ? Math.min(1, (t - start) / dur) : 1;
+      $('num').textContent = fmt(from + (gap - from) * (1 - Math.pow(1 - k, 3)));
+      if (k < 1) requestAnimationFrame(step); else shownGap = gap;
+    };
+    requestAnimationFrame(step);
+  }
+
+  // Values from the link (used until the bridge sends live data)
+  render(parseFloat(q.get('points')) || 0, parseFloat(q.get('goal')) || 0, q.get('rank'));
+
+  // Live values from live-bridge.mjs
+  const BRIDGE = q.get('bridge') || (/^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? location.origin : 'http://localhost:3000');
+  if (q.get('live') !== '0' && 'EventSource' in window) {
+    try {
+      const es = new EventSource(BRIDGE + '/events');
+      es.addEventListener('state', (e) => { const p = JSON.parse(e.data).points; if (p.goal > 0) render(p.total, p.goal, p.rank); });
+      es.addEventListener('gift', (e) => {
+        const g = JSON.parse(e.data);
+        const el = document.createElement('div'); el.className = 'pop'; el.textContent = `-${fmt(g.points)}`;
+        stage.appendChild(el); setTimeout(() => el.remove(), 2400);
+      });
+    } catch { /* no bridge */ }
+  }
+
+  // Self-update when the repo's version.txt changes (same as the banner)
+  let loaded = q.get('v');
+  async function check() {
+    try {
+      const r = await fetch(new URL('version.txt?t=' + Date.now(), location.href), { cache: 'no-store' });
+      if (!r.ok) return; const v = (await r.text()).trim(); if (!v) return;
+      if (loaded === null) { loaded = v; return; }
+      if (v !== loaded) { const u = new URL(location.href); u.searchParams.set('v', v); location.replace(u.href); }
+    } catch {}
+  }
+  check(); setInterval(check, 60000);
+})();
+</script>
+</body>
+</html>

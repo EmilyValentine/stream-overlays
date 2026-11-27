@@ -7,6 +7,7 @@ Overlays for TikTok LIVE Studio and OBS.
 | Overlay | File | Size |
 |---|---|---|
 | LIVE Fest 2026 gift banner | `livefest-banner.html` | 1080 × 380 |
+| LIVE Fest next target | `next-target.html` | 760 × 200 |
 
 ## Use the hosted link (GitHub Pages)
 
