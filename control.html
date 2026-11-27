@@ -92,6 +92,7 @@
       <code id="bannerLink"></code>
       <div class="hint">Last gift: <span id="lastGift">none yet</span></div>
       <div class="hint warn" id="rankHint"></div>
+      <div class="hint" id="rankCands"></div>
       <button class="ghost" id="testBtn" type="button">Send a test FEST gift</button>
       <span class="hint">Adds test points. Sync again afterwards to clear them.</span>
       <div class="preview"><iframe id="preview" title="Banner preview"></iframe></div>
@@ -140,6 +141,10 @@
 
     const g = s.lastGift;
     $('lastGift').textContent = g ? `${g.nickname} sent ${g.name} ×${g.count} (+${fmt(g.points)} pts${g.fest ? ', FEST' : ''})${g.test ? ' [test]' : ''}` : 'none yet';
+    const rc = s.rankCandidates || [];
+    $('rankCands').innerHTML = rc.length
+      ? '<b>Rank data seen in TikTok\'s page (newest first):</b>' + rc.slice(0, 6).map((c) => `<div class="row"><span>#${fmt(c.rank)} · ${escapeHtml(c.scoreKey)} ${fmt(c.score)}${c.isMe ? ' · <b style="color:#3ddc84">looks like yours</b>' : ''}</span><span class="muted" style="font-size:12px">${escapeHtml(c.url.replace(/^https?:\/\/[^/]+/, ''))}</span></div>`).join('')
+      : '';
     $('rankHint').textContent = s.rankHint ? `Possible rank info spotted in ${s.rankHint.type}: "${s.rankHint.text}"` : '';
   }
 

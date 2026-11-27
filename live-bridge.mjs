@@ -59,6 +59,7 @@ const state = {
   topGifters: [],
   lastGift: null,
   rankHint: null,
+  rankCandidates: [],
   messageTypes: {}
 };
 
@@ -299,6 +300,69 @@ function recordGift({ name, coinsEach, count, user, nickname, giftId, test }) {
   broadcast('state', publicState());
 }
 
+// ---------------------------------------------------------------- rank sniffing (HTTP)
+// The LIVE page fetches ranking data (LIVE Fest, leagues, daily rank) over normal HTTP requests,
+// separately from the live message stream. Log those and look for your own rank in them.
+
+const RANK_URL = /rank|league|fest|campaign|activity|competition|leaderboard|anchor.*(score|level)|gift_?panel/i;
+const RANK_BODY = /fest|league|rank/i;
+const RANK_KEYS = ['rank', 'ranking', 'user_rank', 'my_rank', 'self_rank', 'cur_rank', 'current_rank', 'rank_index', 'position'];
+const SCORE_KEYS = ['score', 'points', 'point', 'total_score', 'value', 'fest_score', 'gap', 'gap_score', 'gap_to_previous', 'diff_score', 'distance'];
+const SELF_HINT = /self|owner|anchor|my_|current_user|mine|host/i;
+
+function safeUrl(u) {
+  try { const x = new URL(u); return x.origin + x.pathname; } catch { return String(u).split('?')[0]; }
+}
+
+function findRankCandidates(obj, url) {
+  const found = [];
+  const me = String(config.username || '').toLowerCase();
+  const walk = (node, pathKeys, depth) => {
+    if (!node || typeof node !== 'object' || depth > 12 || found.length > 20) return;
+    if (Array.isArray(node)) { node.forEach((v, i) => walk(v, pathKeys.concat(i), depth + 1)); return; }
+    const keys = Object.keys(node);
+    const rankKey = keys.find((k) => RANK_KEYS.includes(k.toLowerCase()));
+    const scoreKey = keys.find((k) => SCORE_KEYS.includes(k.toLowerCase()));
+    if (rankKey && scoreKey) {
+      const rank = Number(node[rankKey]);
+      const json = JSON.stringify(node).toLowerCase();
+      const pathStr = pathKeys.join('.');
+      const isMe = (me && json.includes(`"${me}"`)) || SELF_HINT.test(pathStr);
+      if (rank >= 1 && rank <= 100000) {
+        found.push({ url: safeUrl(url), path: pathStr, rank, rankKey, score: node[scoreKey], scoreKey, isMe, at: new Date().toISOString() });
+      }
+    }
+    for (const k of keys) walk(node[k], pathKeys.concat(k), depth + 1);
+  };
+  walk(obj, [], 0);
+  return found;
+}
+
+async function sniffHttp(response) {
+  const url = response.url();
+  if (!/tiktok\.com|tiktokv\.com|tiktokcdn/i.test(url)) return;
+  if (/\/webcast\/im\/fetch/i.test(url)) return;
+  const ct = (response.headers()['content-type'] || '').toLowerCase();
+  if (!ct.includes('json')) return;
+  let text;
+  try { text = await response.text(); } catch { return; }
+  if (!text || text.length > 2_000_000) return;
+  if (!RANK_URL.test(url) && !RANK_BODY.test(text)) return;
+
+  let body;
+  try { body = JSON.parse(text); } catch { return; }
+  if (config.logRawMessages) log.write(JSON.stringify({ time: new Date().toISOString(), type: 'http', url: safeUrl(url), data: body }) + '\n');
+
+  const candidates = findRankCandidates(body, url);
+  if (candidates.length) {
+    const mine = candidates.filter((c) => c.isMe);
+    const keep = (mine.length ? mine : candidates).slice(0, 5);
+    state.rankCandidates = keep.concat(state.rankCandidates).slice(0, 15);
+    for (const c of keep) console.log(`  Rank data${c.isMe ? ' (looks like yours)' : ''}: #${c.rank} ${c.scoreKey}=${c.score}  [${c.url.replace(/^https?:\/\/[^/]+/, '')} ${c.path}]`);
+    broadcast('state', publicState());
+  }
+}
+
 // ---------------------------------------------------------------- browser capture
 
 async function launchBrowser() {
@@ -350,6 +414,8 @@ async function startCapture() {
       lastSocketAt = 0;
     });
   });
+
+  page.on('response', (response) => { sniffHttp(response).catch(() => {}); });
 
   page.on('response', async (response) => {
     if (!/\/webcast\/im\/fetch/i.test(response.url())) return;
@@ -408,4 +474,4 @@ server.on('error', (err) => {
   process.exit(1);
 });
 
-export { handleMessages, recordGift, state };
+export { handleMessages, recordGift, findRankCandidates, state };
