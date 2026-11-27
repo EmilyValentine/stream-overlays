@@ -39,20 +39,8 @@
   #stage{position:absolute;left:0;top:0;width:var(--W);height:var(--H);transform-origin:0 0}
 
   /* ---------- frame ---------- */
-  .banner{position:absolute;inset:14px;border-radius:38px;isolation:isolate}
-  .banner::before{ /* rotating neon border */
-    content:"";position:absolute;inset:-4px;border-radius:42px;z-index:-2;
-    background:conic-gradient(from var(--a),var(--pink),var(--violet),var(--cyan),var(--gold),var(--pink));
-    animation:spin 6s linear infinite;filter:saturate(1.2);
-  }
-  .banner::after{ /* outer glow */
-    content:"";position:absolute;inset:-4px;border-radius:42px;z-index:-3;
-    background:conic-gradient(from var(--a),var(--pink),var(--violet),var(--cyan),var(--gold),var(--pink));
-    filter:blur(18px);opacity:.55;animation:spin 6s linear infinite;
-  }
-  @property --a{syntax:"<angle>";inherits:false;initial-value:0deg}
-  @keyframes spin{to{--a:360deg}}
-  .inner{position:absolute;inset:0;border-radius:38px;overflow:hidden;
+  .banner{position:absolute;inset:0;isolation:isolate}
+  .inner{position:absolute;inset:0;overflow:hidden;
     background:
       radial-gradient(120% 90% at 0% 0%,rgba(255,45,122,.32),transparent 55%),
       radial-gradient(90% 100% at 100% 100%,rgba(34,240,255,.22),transparent 55%),
@@ -66,7 +54,7 @@
   canvas#fx{position:absolute;inset:0;width:100%;height:100%}
 
   /* ---------- left: title ---------- */
-  .title{position:absolute;left:46px;top:52px;width:420px}
+  .title{position:absolute;left:60px;top:66px;width:420px}
   .wordmark{margin-top:0;font:900 96px/0.88 Outfit,sans-serif;letter-spacing:-.02em;position:relative}
   .wordmark .l1,.wordmark .l2{display:block;
     background:linear-gradient(100deg,#fff 0%,#ffd6e8 20%,var(--hot) 40%,var(--cyan) 60%,#fff 80%,#ffd6e8 100%);
@@ -83,7 +71,7 @@
   .team small{font:800 15px/1 Outfit,sans-serif;letter-spacing:.2em;color:#ff9cc8;text-shadow:none;margin-right:2px}
 
   /* ---------- right: featured gift ---------- */
-  .feature{position:absolute;left:486px;top:24px;width:548px;height:252px;border-radius:28px;
+  .feature{position:absolute;left:500px;top:38px;width:548px;height:252px;border-radius:28px;
     background:linear-gradient(160deg,rgba(255,255,255,.12),rgba(255,255,255,.03));
     border:1px solid rgba(255,255,255,.16);box-shadow:inset 0 1px 0 rgba(255,255,255,.18),0 20px 40px rgba(0,0,0,.25);overflow:hidden}
   .feature .label{position:absolute;right:24px;top:20px;font:800 15px/1 Outfit,sans-serif;letter-spacing:.24em;color:var(--cyan)}
@@ -115,7 +103,7 @@
 
 
   /* ---------- goal bar ---------- */
-  .goal{position:absolute;left:486px;top:286px;width:548px;height:52px}
+  .goal{position:absolute;left:500px;top:300px;width:548px;height:52px}
   .goal-top{display:flex;justify-content:space-between;align-items:baseline;font:800 16px/1 Outfit,sans-serif;letter-spacing:.14em;color:#fff}
   .goal-top .lbl b{color:var(--gold)}
   .goal-top .val{font:700 18px/1 Fredoka,sans-serif;letter-spacing:.02em;color:var(--cyan)}
@@ -298,7 +286,7 @@
   }
   /* ---------- particles ---------- */
   const cv = document.getElementById('fx'), cx = cv.getContext('2d');
-  const W = 1052, H = 352, DPR = Math.min(2, devicePixelRatio || 1) * 1.5;
+  const W = 1080, H = 380, DPR = Math.min(2, devicePixelRatio || 1) * 1.5;
   cv.width = W * DPR; cv.height = H * DPR; cx.scale(DPR, DPR);
   const COLS = ['#ff5fa2','#22f0ff','#ffd15c','#b79cff','#ffffff'];
   const P = Array.from({length:46}, () => spawn(true));
