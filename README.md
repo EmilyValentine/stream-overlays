@@ -47,3 +47,13 @@ Add these to the end of the link, for example `livefest-banner.html?points=849&g
 | `mult` | FEST gift points per coin | `2` |
 | `speed` | Seconds each gift is shown | `4` |
 | `bg` | `transparent`, `green` or `dark` | `transparent` |
+
+## LIVE Fest rank probe
+
+Finds out whether TikTok's live event feed includes your LIVE Fest rank. Run it while you are live:
+
+- Windows: double-click `run-rank-probe.bat` and enter your TikTok username
+- Or: `npm install` then `npm run probe -- <username> 15`
+
+It listens for 15 minutes, prints anything rank-related as it arrives, and saves the details to `probe-log.jsonl`.
+The probe uses the unofficial `tiktok-live-connector` library; set `EULER_API_KEY` if the free signing tier is rate-limited.
