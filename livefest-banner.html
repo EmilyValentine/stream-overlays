@@ -74,12 +74,13 @@
     animation:shine 5s ease-in-out infinite;filter:drop-shadow(0 4px 18px rgba(255,45,122,.45))}
   .wordmark .l2{animation-delay:-.4s}
   @keyframes shine{0%,100%{background-position:0% 0}50%{background-position:100% 0}}
-  .team{margin-top:26px;display:inline-flex;align-items:center;gap:12px;padding:10px 20px 10px 12px;border-radius:99px;
-    background:linear-gradient(90deg,rgba(255,45,122,.25),rgba(139,92,255,.25));border:1.5px solid rgba(255,95,162,.6);
-    font:700 26px/1 Fredoka,sans-serif;color:#fff}
+  .team{margin-top:26px;display:inline-flex;align-items:center;gap:12px;padding:10px 22px 10px 12px;border-radius:99px;
+    background:linear-gradient(#1a0733,#1a0733) padding-box,linear-gradient(90deg,var(--pink),var(--violet),var(--cyan)) border-box;
+    border:2px solid transparent;box-shadow:0 0 18px rgba(255,45,122,.45),inset 0 0 14px rgba(255,45,122,.18);
+    font:700 27px/1 Fredoka,sans-serif;color:#fff;text-shadow:0 0 10px rgba(255,95,162,.85),0 2px 3px rgba(0,0,0,.6)}
   .team .heart{width:34px;height:34px;animation:beat 1.2s ease-in-out infinite}
   @keyframes beat{0%,100%{transform:scale(1)}15%{transform:scale(1.22)}30%{transform:scale(.96)}45%{transform:scale(1.12)}}
-  .team small{font:600 15px/1 Outfit,sans-serif;letter-spacing:.18em;color:#ffb8d6;margin-right:2px}
+  .team small{font:800 15px/1 Outfit,sans-serif;letter-spacing:.2em;color:#ff9cc8;text-shadow:none;margin-right:2px}
 
   /* ---------- right: featured gift ---------- */
   .feature{position:absolute;left:486px;top:24px;width:548px;height:252px;border-radius:28px;
