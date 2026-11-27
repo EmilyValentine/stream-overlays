@@ -50,13 +50,14 @@ Add these to the end of the link, for example `livefest-banner.html?points=849&g
 
 ## LIVE Fest rank probe
 
-Finds out whether TikTok's live event feed includes your LIVE Fest rank. Run it while you are live:
+Finds out whether TikTok's live event feed includes your LIVE Fest rank. It connects through
+[TikTool](https://tik.tools)'s WebSocket API, which has a free tier. Requires Node.js 22 or newer.
 
-- Windows: double-click `run-rank-probe.bat` and enter your TikTok username
-- Or: `npm install` then `npm run probe -- <username> 15`
-
-It listens for 15 minutes, prints anything rank-related as it arrives, and saves the details to `probe-log.jsonl`.
-The probe uses the unofficial `tiktok-live-connector` library; set `EULER_API_KEY` if the free signing tier is rate-limited.
+1. Get a free API key at https://tik.tools
+2. While you are live, double-click `run-rank-probe.bat`. The first run asks for the key and saves it to
+   `tiktool-key.txt` (ignored by git, so it is never uploaded).
+3. Enter your TikTok username. The probe listens for 15 minutes, prints anything rank-related as it arrives,
+   and saves the details to `probe-log.jsonl`.
 
 ## Updates
 
