@@ -29,35 +29,35 @@
   #stage{position:absolute;left:0;top:0;width:760px;height:200px;transform-origin:0 0}
 
   .tags{position:absolute;left:150px;top:18px;display:flex;gap:8px}
-  .tag{font:800 15px/1 Outfit,sans-serif;letter-spacing:.08em;color:#fff;padding:6px 11px;border-radius:8px}
+  .tag{font:800 15px/1 Outfit,sans-serif;letter-spacing:.08em;color:#f6e6f0;padding:6px 11px;border-radius:8px}
   .tag.fest{background:linear-gradient(90deg,var(--pink),var(--violet))}
-  .tag.rank{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25)}
+  .tag.rank{background:rgba(26,6,48,.85);border:1px solid rgba(255,255,255,.14);color:#e9dcf2}
   .tag.rank:empty{display:none}
 
   .pill{position:absolute;left:62px;top:52px;width:676px;height:118px;border-radius:60px;
     background:linear-gradient(100deg,#2a0a3d 0%,#1a0630 55%,#10082a 100%);
-    box-shadow:0 0 0 2px rgba(255,95,162,.55),0 0 26px rgba(255,45,122,.45),inset 0 1px 0 rgba(255,255,255,.12)}
+    box-shadow:0 0 0 1.5px rgba(255,95,162,.45),0 0 12px rgba(255,45,122,.22),inset 0 1px 0 rgba(255,255,255,.06)}
   .pill::after{content:"";position:absolute;inset:0;border-radius:60px;
-    background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.10) 45%,transparent 60%);background-size:250% 100%;
+    background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.04) 45%,transparent 60%);background-size:250% 100%;
     animation:sheen 4.5s ease-in-out infinite}
   @keyframes sheen{0%{background-position:120% 0}60%,100%{background-position:-120% 0}}
 
   .badge{position:absolute;left:14px;top:38px;width:150px;height:150px;border-radius:50%;
-    background:radial-gradient(circle at 35% 30%,#ff8fc0,var(--pink) 45%,#8a0f4a 100%);
-    box-shadow:0 0 0 5px #1a0630,0 0 0 8px rgba(255,95,162,.8),0 0 30px rgba(255,45,122,.7);display:grid;place-items:center;z-index:2}
-  .badge svg{width:84px;height:84px;filter:drop-shadow(0 3px 4px rgba(0,0,0,.4))}
+    background:radial-gradient(circle at 35% 30%,#e8559a,#c41f63 50%,#6e0c3c 100%);
+    box-shadow:0 0 0 5px #1a0630,0 0 0 7px rgba(255,95,162,.55),0 0 12px rgba(255,45,122,.3);display:grid;place-items:center;z-index:2}
+  .badge svg{width:84px;height:84px;filter:drop-shadow(0 2px 2px rgba(0,0,0,.3))}
   .badge .c1{animation:rise 1.6s ease-in-out infinite}
   .badge .c2{animation:rise 1.6s ease-in-out .2s infinite}
   @keyframes rise{0%,100%{transform:translateY(4px);opacity:.75}50%{transform:translateY(-4px);opacity:1}}
 
   .body{position:absolute;left:184px;top:66px;right:46px}
-  .kicker{font:800 17px/1 Outfit,sans-serif;letter-spacing:.26em;color:var(--hot)}
+  .kicker{font:800 17px/1 Outfit,sans-serif;letter-spacing:.26em;color:#e877ad}
   .line{margin-top:6px;display:flex;align-items:baseline;gap:12px;white-space:nowrap}
-  .num{font:700 52px/1 Fredoka,sans-serif;color:#fff;text-shadow:0 0 14px rgba(255,95,162,.6),0 2px 3px rgba(0,0,0,.5)}
-  .to{font:800 24px/1 Outfit,sans-serif;color:var(--hot)}
-  .target{font:900 44px/1 Outfit,sans-serif;color:#fff;font-style:italic}
+  .num{font:700 52px/1 Fredoka,sans-serif;color:#f6e6f0;text-shadow:0 2px 2px rgba(0,0,0,.35)}
+  .to{font:800 24px/1 Outfit,sans-serif;color:#e877ad}
+  .target{font:900 44px/1 Outfit,sans-serif;color:#f6e6f0;font-style:italic}
   .bar{position:absolute;left:184px;right:46px;top:146px;height:8px;border-radius:99px;background:rgba(255,255,255,.14);overflow:hidden}
-  .fill{height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--pink),var(--hot),var(--cyan));box-shadow:0 0 10px rgba(255,45,122,.8);transition:width 1.2s cubic-bezier(.2,.8,.2,1)}
+  .fill{height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--pink),var(--hot),var(--cyan));box-shadow:none;transition:width 1.2s cubic-bezier(.2,.8,.2,1)}
   .done .num{color:var(--gold)}
   .pop{position:absolute;right:46px;top:20px;font:800 24px/1 Fredoka,sans-serif;color:var(--gold);text-shadow:0 0 12px rgba(255,209,92,.8);animation:popUp 2.4s ease forwards;pointer-events:none}
   @keyframes popUp{0%{opacity:0;transform:translateY(12px)}15%{opacity:1;transform:none}70%{opacity:1;transform:translateY(-12px)}100%{opacity:0;transform:translateY(-26px)}}
@@ -70,8 +70,8 @@
   <div class="pill"></div>
   <div class="badge">
     <svg viewBox="0 0 64 64" aria-hidden="true">
-      <path class="c1" d="M14 30 L32 14 L50 30" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
-      <path class="c2" d="M14 48 L32 32 L50 48" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+      <path class="c1" d="M14 30 L32 14 L50 30" fill="none" stroke="#fbe3ef" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+      <path class="c2" d="M14 48 L32 32 L50 48" fill="none" stroke="#fbe3ef" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
   </div>
   <div class="body" id="body">
