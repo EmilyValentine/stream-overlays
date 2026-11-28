@@ -63,9 +63,10 @@
   .crit{position:absolute;right:30px;top:120px;font:900 34px/1 Outfit,sans-serif;font-style:italic;color:var(--gold);
     text-shadow:0 2px 3px rgba(0,0,0,.5);animation:crit 1.6s cubic-bezier(.2,1.3,.4,1) forwards;pointer-events:none}
   @keyframes crit{0%{opacity:0;transform:scale(.4) rotate(-8deg)}20%{opacity:1;transform:scale(1.15) rotate(-4deg)}70%{opacity:1;transform:scale(1) rotate(-4deg)}100%{opacity:0;transform:translateY(-20px) rotate(-4deg)}}
-  .award{position:absolute;left:50%;top:244px;transform:translateX(-50%);max-width:700px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-    padding:10px 22px;border-radius:40px;background:linear-gradient(90deg,#c41f63,#8b5cff);color:#f6e6f0;font:700 22px/1 Fredoka,sans-serif;
-    box-shadow:0 0 12px rgba(255,45,122,.35);animation:award 4.2s ease forwards;pointer-events:none}
+  .award{position:absolute;left:50%;bottom:8px;transform:translateX(-50%);max-width:740px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    padding:16px 32px;border-radius:50px;background:linear-gradient(90deg,#c41f63,#8b5cff);color:#fff;font:700 36px/1 Fredoka,sans-serif;
+    box-shadow:0 0 0 3px rgba(255,255,255,.25),0 0 18px rgba(255,45,122,.45);text-shadow:0 2px 3px rgba(0,0,0,.35);animation:award 7s ease forwards;pointer-events:none}
+  .award .gift{font-size:38px;margin-right:10px}
   @keyframes award{0%{opacity:0;transform:translate(-50%,10px) scale(.9)}10%{opacity:1;transform:translate(-50%,0) scale(1)}85%{opacity:1}100%{opacity:0;transform:translate(-50%,-10px)}}
   @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
@@ -165,7 +166,7 @@
       const theirs = p.side === 'opponent';
       const chance = p.critLow ? ` · ${p.critLow}${p.critHigh && p.critHigh !== p.critLow ? '–' + p.critHigh : ''}% chance of ×${p.multiple || 5}` : '';
       return `<div class="card${theirs ? ' theirs' : ''}" data-id="${esc(p.id)}">
-        <div class="cicon">${p.image ? `<img src="${esc(p.image)}" alt="" referrerpolicy="no-referrer">` : ''}${p.multiple ? `<span class="cx">×${p.multiple}</span>` : (p.image ? '' : '★')}</div>
+        <div class="cicon">${p.image ? `<img src="${esc(p.image)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}${p.multiple ? `<span class="cx">×${p.multiple}</span>` : (p.image ? '' : '★')}</div>
         <div class="ctext"><div class="cname">${esc(p.name)}</div><div class="cmeta">from ${esc(p.by)}${chance}</div></div>
         <div class="ctime">${p.endsAt ? mmss(p.endsAt - now) : ''}</div></div>`;
     }).join('');
@@ -176,8 +177,10 @@
   function award(users) {
     const el = document.createElement('div');
     el.className = 'award';
-    el.textContent = users.length === 1 ? `${users[0]} earned a power-up!` : `${users.slice(0, 3).join(', ')} earned power-ups!`;
-    stage.appendChild(el); setTimeout(() => el.remove(), 4200);
+    const who = users.length === 1 ? users[0] : users.slice(0, 3).join(', ') + (users.length > 3 ? ` +${users.length - 3}` : '');
+    el.innerHTML = `<span class="gift">🎁</span>${esc(who)} ${users.length === 1 ? 'earned a power-up!' : 'earned power-ups!'}`;
+    stage.querySelectorAll('.award').forEach((x) => x.remove());
+    stage.appendChild(el); setTimeout(() => el.remove(), 7000);
   }
 
   function crit(text) {
