@@ -526,7 +526,10 @@ function handleArmies(data) {
 
 const CARD_NAMES = { pm_mt_boost_crit_name: 'Boosting Glove' };
 
-function cardLabel(key, pattern) {
+function cardLabel(key, pattern, raw) {
+  // Music Booster does the same job as the glove (activated by singing), so it may share the glove's key.
+  // If TikTok's text or the card data mentions music anywhere, label it Music Booster.
+  if (/music|sing/i.test(String(pattern || '')) || /music/i.test(JSON.stringify(raw || {}))) return 'Music Booster';
   if (CARD_NAMES[key]) return CARD_NAMES[key];
   const fromPattern = String(pattern || '').match(/sent \d+ ([^{}]+)$/i);
   if (fromPattern) return fromPattern[1].replace(/\b\w/g, (c) => c.toUpperCase());
@@ -550,7 +553,7 @@ function handleItemCard(data) {
     const p = {
       id: `${data.battleId}:${field}:${startsAt}`,
       type: field.replace(/^use|Card$/g, ''),
-      name: cardLabel(info.cardNameKey, data.displayContent?.defaultPattern),
+      name: cardLabel(info.cardNameKey, data.displayContent?.defaultPattern, v),
       multiple: Number(v.multiple) || null,
       critLow: Number(v.criticalStrikeRateLow) || null,
       critHigh: Number(v.criticalStrikeRateHigh) || null,
