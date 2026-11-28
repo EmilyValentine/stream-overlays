@@ -34,6 +34,7 @@ const DEFAULT_CONFIG = {
   multiplier: 2,
   festGifts: ['LIVE FEST 26', 'FEST Explorer', 'FEST Energy', 'FEST Showtime!', 'FEST World'],
   eulerApiKey: '',
+  hostUserId: '',
   record: true,
   blockVideo: true,
   logRawMessages: true
@@ -65,6 +66,7 @@ const state = {
   room: { viewers: 0, peakViewers: 0, totalViewers: 0, totalLikes: 0 },
   battle: null,
   boost: null,
+  league: null,
   recentChat: [],
   recentEvents: [],
   topGifters: [],
@@ -343,8 +345,13 @@ function handleBattleTask(data) {
   const battleId = String(data.battleId ?? '');
   if (kind === 0) {
     const cfg = data.start?.config?.rewardConfig || {};
-    const multiplier = Number(cfg.rewardMultiple) || null;
-    const durationSec = Number(cfg.duration) || null;
+    const preview = data.start?.config?.previewConfig || [];
+    const elem = (field) => {
+      for (const p of preview) for (const e of p?.prompt?.elems || []) if (e.promptField === field && Number(e.value)) return Number(e.value);
+      return null;
+    };
+    const multiplier = Number(cfg.rewardMultiple) || elem('multi') || null;
+    const durationSec = Number(cfg.duration) || elem('dur') || null;
     state.boost = { battleId, side, sideVerified: false };
     boostEvent('challenge', { multiplier, durationSec, progress: 0 });
   } else if (kind === 1 && state.boost && state.boost.battleId === battleId) {
@@ -367,6 +374,76 @@ setInterval(() => {
   if (b.phase === 'scheduled' && now >= b.startsAt) boostEvent('active');
   else if (b.phase === 'active' && b.endsAt && now >= b.endsAt) boostEvent('ended');
 }, 500);
+
+
+// ---------------------------------------------------------------- battles
+// LinkMicBattle action 4 = battle started (creators, leagues, LIVE Fest estimated scores),
+// action 5 = finished (result per creator). LinkMicArmies = live score updates with top supporters.
+
+function entries(mapOrList) {
+  if (!mapOrList) return [];
+  if (Array.isArray(mapOrList)) return mapOrList.map((e) => [String(e.key), e.value]);
+  return Object.entries(mapOrList);
+}
+
+function isMe(user) {
+  const me = String(config.username || '').toLowerCase();
+  const handle = String(user?.displayId || user?.uniqueId || '').toLowerCase();
+  const nick = String(user?.nickName || user?.nickname || '').toLowerCase().replace(/[^a-z0-9._]/g, '');
+  return Boolean(me) && (handle === me || nick === me);
+}
+
+function sideOf(hostId) {
+  if (!config.hostUserId) return 'unknown';
+  return String(hostId) === String(config.hostUserId) ? 'mine' : 'opponent';
+}
+
+function handleBattle(data) {
+  const action = Number(data.action);
+  const id = String(data.battleId || '');
+  if (action === 4) {
+    const hosts = {};
+    for (const [key, value] of entries(data.anchorsInfo)) {
+      const u = value?.user || {};
+      hosts[key] = { id: key, name: u.nickName || u.nickname || u.displayId || key, handle: u.displayId || '' , score: 0 };
+      if (!config.hostUserId && isMe(u)) { config.hostUserId = key; saveConfig(); console.log(`  Learned your TikTok host id: ${key}`); }
+    }
+    for (const [key, value] of entries(data.leagueInfoMap)) {
+      hosts[key] = hosts[key] || { id: key, score: 0 };
+      hosts[key].league = value?.leagueInfo?.displayText?.content || null;
+    }
+    for (const [key, value] of entries(data.leagueScoreInfoMap)) {
+      hosts[key] = hosts[key] || { id: key, score: 0 };
+      hosts[key].festEstimate = Number(value?.estimatedScore) || 0;
+    }
+    state.battle = { id, phase: 'live', startedAt: new Date().toISOString(), hosts, supporters: {}, winner: null };
+    const me = hosts[config.hostUserId];
+    if (me?.league) state.league = me.league;
+    pushEvent('battle', { phase: 'started', opponents: Object.values(hosts).filter((h) => sideOf(h.id) !== 'mine').map((h) => h.name) });
+  } else if (action === 5 && state.battle && state.battle.id === id) {
+    for (const [key, value] of entries(data.battleResult)) {
+      const h = state.battle.hosts[key] || (state.battle.hosts[key] = { id: key });
+      h.score = Number(value?.score) || h.score || 0;
+      h.result = Number(value?.result);
+    }
+    const mine = state.battle.hosts[config.hostUserId];
+    state.battle.phase = 'ended';
+    state.battle.outcome = mine ? (mine.result === 0 ? 'won' : mine.result === 1 ? 'lost' : 'draw') : 'unknown';
+    pushEvent('battle', { phase: 'ended', outcome: state.battle.outcome, scores: Object.fromEntries(Object.values(state.battle.hosts).map((h) => [h.name || h.id, h.score])) });
+  }
+  stateDirty = true;
+}
+
+function handleArmies(data) {
+  const id = String(data.battleId || '');
+  if (!state.battle || state.battle.id !== id) return;
+  for (const [key, value] of entries(data.armies)) {
+    const h = state.battle.hosts[key] || (state.battle.hosts[key] = { id: key });
+    h.score = Number(value?.hostscore ?? value?.hostScore) || 0;
+    state.battle.supporters[key] = (value?.userArmies || []).slice(0, 3).map((u) => ({ name: u.nickname || u.nickName || '', score: Number(u.score) || 0 }));
+  }
+  stateDirty = true;
+}
 
 function handleOther(type, data) {
   switch (type) {
@@ -414,9 +491,11 @@ function handleOther(type, data) {
       break;
     }
     case 'WebcastLinkMicBattle': {
-      state.battle = { id: String(data.battleId || ''), action: Number(data.action), at: new Date().toISOString() };
-      pushEvent('battle', { action: Number(data.action) });
-      stateDirty = true;
+      handleBattle(data);
+      break;
+    }
+    case 'WebcastLinkMicArmies': {
+      handleArmies(data);
       break;
     }
     default:
@@ -546,7 +625,7 @@ async function startEuler(apiKey) {
   const STATUS_FILE = path.join(ROOT, 'bridge-status.json');
   setInterval(() => {
     try {
-      fs.writeFileSync(STATUS_FILE, JSON.stringify({ at: new Date().toISOString(), mode: 'euler', ws: wsStats, bridge: state.bridge, points: state.points, session: state.session, lastGift: state.lastGift, messageTypes: state.messageTypes, rankCandidates: state.rankCandidates, rankHint: state.rankHint, debug: eulerLog }, null, 2));
+      fs.writeFileSync(STATUS_FILE, JSON.stringify({ at: new Date().toISOString(), mode: 'euler', ws: wsStats, bridge: state.bridge, points: state.points, session: state.session, room: state.room, battle: state.battle, boost: state.boost, league: state.league || null, lastGift: state.lastGift, messageTypes: state.messageTypes, rankCandidates: state.rankCandidates, rankHint: state.rankHint, debug: eulerLog }, null, 2));
     } catch { /* ignore */ }
   }, 10000);
   const connect = async () => {
