@@ -7,7 +7,8 @@
 <!--
   Battle boost and power-up overlay — stream overlay
   Browser / Link source size: 760 x 300 (scales to any size). Transparent background.
-  Needs live-bridge.mjs. Shows nothing until a boost challenge, boost or power-up is happening.
+  Needs live-bridge.mjs. Shows nothing until a boost challenge, boost, First Gift bonus or power-up is happening.
+  ?demo=firstgift previews the First Gift pill.
 
     bg       transparent | green | dark
     demo=1   Show sample states for positioning
@@ -93,13 +94,26 @@
   const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const mmss = (ms) => { const t = Math.max(0, Math.ceil(ms / 1000)); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; };
 
-  let boost = null, failedUntil = 0, powerups = [];
+  let boost = null, failedUntil = 0, powerups = [], firstGift = null, battleLive = true;
 
   function renderBoost() {
     const el = $('boost');
     const now = Date.now();
     const b = boost;
-    const visible = b && (['challenge', 'progress', 'scheduled', 'active'].includes(b.phase) || (b.phase === 'failed' && now < failedUntil));
+    const visible = battleLive && b && (['challenge', 'progress', 'waiting', 'scheduled', 'active'].includes(b.phase) || (b.phase === 'failed' && now < failedUntil));
+    const fg = firstGift;
+    const fgLive = battleLive && fg && fg.endsAt && now < fg.endsAt;
+    // The boost takes priority; otherwise the First Gift bonus uses the same pill.
+    if (!visible && fgLive) {
+      el.classList.add('show', 'active'); el.classList.remove('failed');
+      $('mult').textContent = fg.multiplier ? `×${fg.multiplier}` : '×2';
+      $('bk').textContent = 'FIRST GIFT BONUS';
+      $('bmain').textContent = fg.startsAt > now ? mmss(fg.startsAt - now) : 'NOW';
+      $('bsub').textContent = `FIRST GIFT GETS ×${fg.multiplier || 2} POINTS`;
+      const span = (fg.startsAt - (fg.announcedAt || fg.startsAt - 10000)) || 10000;
+      $('bfill').style.width = fg.startsAt > now ? Math.max(0, Math.min(100, (fg.startsAt - now) / span * 100)) + '%' : '100%';
+      return;
+    }
     el.classList.toggle('show', Boolean(visible));
     if (!visible) return;
     el.classList.toggle('active', b.phase === 'active');
@@ -123,9 +137,9 @@
       $('bfill').style.width = '0%';
     } else {
       $('bk').textContent = 'BOOST CHALLENGE' + side;
-      $('bmain').textContent = 'UNLOCK IT';
-      $('bsub').textContent = b.durationSec ? `${b.multiplier ? '×' + b.multiplier + ' ' : ''}FOR ${b.durationSec}s` : '';
-      let p = Number(b.progress) || 0; if (p > 1) p = p / 100;
+      $('bmain').textContent = b.phase === 'waiting' ? 'DONE!' : 'UNLOCK IT';
+      $('bsub').textContent = b.phase === 'waiting' ? 'WAITING ON THEM' : b.durationSec ? `${b.multiplier ? '×' + b.multiplier + ' ' : ''}FOR ${b.durationSec}s` : '';
+      let p = b.phase === 'waiting' ? 1 : Number(b.progress) || 0; if (p > 1) p = p / 100;
       $('bfill').style.width = Math.max(2, Math.min(100, p * 100)) + '%';
     }
   }
@@ -158,6 +172,10 @@
     stage.appendChild(el); setTimeout(() => el.remove(), 1700);
   }
 
+  if (q.get('demo') === 'firstgift') {
+    const go = () => { const n = Date.now(); firstGift = { multiplier: 2, announcedAt: n, startsAt: n + 10000, endsAt: n + 15000 }; };
+    go(); setInterval(go, 18000);
+  }
   if (q.get('demo') === '1') {
     const now = Date.now();
     boost = { phase: 'active', multiplier: 2, side: 'mine', startsAt: now - 10000, endsAt: now + 40000, durationSec: 50 };
@@ -170,7 +188,7 @@
   }
 
   const BRIDGE = q.get('bridge') || (/^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? location.origin : 'http://localhost:3000');
-  if (q.get('demo') !== '1' && 'EventSource' in window) {
+  if (!q.get('demo') && 'EventSource' in window) {
     try {
       const es = new EventSource(BRIDGE + '/events');
       es.addEventListener('state', (e) => {
@@ -179,6 +197,8 @@
         boost = st.boost || null;
         if (boost && boost.phase === 'failed' && prev !== 'failed') failedUntil = Date.now() + 6000;
         powerups = st.powerups || [];
+        firstGift = st.firstGift || null;
+        battleLive = !st.battle || st.battle.phase === 'live';
       });
       es.addEventListener('event', (e) => {
         const ev = JSON.parse(e.data);

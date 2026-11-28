@@ -283,6 +283,7 @@ async function replaySession(file, speed) {
     let rec; try { rec = JSON.parse(line); } catch { continue; }
     if (prev !== null) await new Promise((r) => setTimeout(r, Math.min(10000, Math.max(0, (rec.t - prev) / speed))));
     prev = rec.t;
+    if (rec.data?.undecoded) { if (rec.raw) handleUndecoded(rec.type, Buffer.from(rec.raw, 'base64')); continue; }
     handleMessages([{ method: rec.type, msgId: `replay-${n++}`, decodedData: { type: rec.type, data: rec.data } }], 'replay');
   }
   setStatus('offline', 'Replay finished');
@@ -363,6 +364,8 @@ function pushEvent(kind, extra) {
     if (extra.phase === 'started') console.log(`  [${t}] BATTLE started vs ${(extra.opponents || []).join(', ') || 'opponent'}`);
     else if (extra.phase === 'ended') console.log(`  [${t}] BATTLE ${String(extra.outcome || '').toUpperCase()} ${Object.entries(extra.scores || {}).map(([n, v]) => `${n} ${v}`).join(' vs ')}`);
     else if (extra.phase === 'over') console.log(`  [${t}] Punishment round finished`);
+  } else if (kind === 'firstGift') {
+    console.log(`  [${t}] FIRST GIFT x${extra.multiplier ?? '?'} bonus in ${Math.max(0, Math.round((extra.startsAt - Date.now()) / 1000))}s`);
   } else if (kind === 'boost') {
     console.log(`  [${t}] BOOST x${extra.multiplier ?? '?'} ${extra.phase}${extra.side && extra.side !== 'mine' ? ` (${extra.side})` : ''}`);
   } else if (kind === 'powerup') {
@@ -416,13 +419,16 @@ function handleBattleTask(data) {
     const durationSec = Number(cfg.duration) || elem('dur') || null;
     // The real boost window is announced up front; the later settle message often says 0.
     const plannedStart = toMs(cfg.rewardStartTimestamp) || null;
-    state.boost = { battleId, side, sideVerified: false };
+    state.boost = { battleId, side, sideVerified: false, challengeStartedAt: Date.now() };
     boostEvent('challenge', { multiplier, durationSec, progress: 0, plannedStart });
-  } else if (kind === 1 && state.boost && state.boost.battleId === battleId) {
-    boostEvent('progress', { progress: Number(data.taskUpdate?.progress) || 0 });
+  } else if (kind === 1 && state.boost && state.boost.battleId === battleId && ['challenge', 'progress', 'waiting'].includes(state.boost.phase)) {
+    boostEvent(state.boost.phase === 'waiting' ? 'waiting' : 'progress', { progress: Number(data.taskUpdate?.progress) || 0 });
   } else if (kind === 2 && state.boost && state.boost.battleId === battleId) {
     const result = Number(data.taskSettle?.result);
     if (result === 1) { boostEvent('failed'); return; }
+    // result 0 = one side finished, still waiting on the other. Only a real start time (or result 2,
+    // both sides done) means the boost is actually happening.
+    if (result !== 2 && !toMs(data.taskSettle?.rewardStartTimestamp)) { boostEvent('waiting'); return; }
     const startsAt = toMs(data.taskSettle?.rewardStartTimestamp) || state.boost.plannedStart || Date.now();
     const endsAt = startsAt + (Number(state.boost.durationSec) || 0) * 1000;
     boostEvent(Date.now() >= startsAt ? 'active' : 'scheduled', { startsAt, endsAt, bothSucceeded: result === 2 });
@@ -436,6 +442,8 @@ setInterval(() => {
   if (!b) return;
   const now = Date.now();
   if (b.phase === 'scheduled' && now >= b.startsAt) boostEvent('active');
+  // Safety net: a challenge nobody settles (opponent left, message lost) disappears after 2 minutes.
+  else if (['challenge', 'progress', 'waiting'].includes(b.phase) && b.challengeStartedAt && now - b.challengeStartedAt > 120000) clearBattleExtras('timed out');
   else if (b.phase === 'active' && b.endsAt && now >= b.endsAt) boostEvent('ended');
 }, 500);
 
@@ -460,6 +468,55 @@ function isMe(user) {
 function sideOf(hostId) {
   if (!config.hostUserId) return 'unknown';
   return String(hostId) === String(config.hostUserId) ? 'mine' : 'opponent';
+}
+
+// Minimal protobuf reader for messages the decoder doesn't know. Returns { field: [values] },
+// where length-delimited values are Buffers.
+function readProto(buf) {
+  const out = {};
+  let i = 0;
+  const varint = () => { let r = 0n, s = 0n; for (;;) { const c = buf[i++]; if (c === undefined) throw new Error('eof'); r |= BigInt(c & 0x7f) << s; s += 7n; if (c < 0x80) return r; } };
+  while (i < buf.length) {
+    const key = Number(varint()); const f = key >> 3, w = key & 7;
+    let v;
+    if (w === 0) v = varint();
+    else if (w === 2) { const l = Number(varint()); v = buf.subarray(i, i + l); i += l; }
+    else if (w === 1) { v = buf.subarray(i, i + 8); i += 8; }
+    else if (w === 5) { v = buf.subarray(i, i + 4); i += 4; }
+    else throw new Error('wire type ' + w);
+    (out[f] = out[f] || []).push(v);
+  }
+  return out;
+}
+
+// WebcastBattleGameplayMessage = TikTok's "First Gift xN gifting points" bonus during a match.
+// Seen layout: 2 = battleId, 5 = { 1: multiplier, 2: window start ms, 3: window end ms }.
+// TikTok shows its countdown from when the message arrives until the window starts.
+function handleGameplay(payload) {
+  try {
+    const m = readProto(Buffer.from(payload));
+    const battleId = String(m[2]?.[0] ?? '');
+    const w = m[5]?.[0] ? readProto(m[5][0]) : {};
+    const multiplier = Number(w[1]?.[0] ?? 0) || null;
+    const startsAt = Number(w[2]?.[0] ?? 0) || null;
+    const endsAt = Number(w[3]?.[0] ?? 0) || null;
+    if (!startsAt) return;
+    state.firstGift = { battleId, multiplier, announcedAt: Date.now(), startsAt, endsAt, type: Number(m[3]?.[0] ?? 0) };
+    pushEvent('firstGift', { multiplier, startsAt, endsAt });
+    stateDirty = true;
+  } catch (e) { console.log('  Could not read BattleGameplayMessage: ' + e.message); }
+}
+
+function handleUndecoded(method, payload) {
+  if (method === 'WebcastBattleGameplayMessage') handleGameplay(payload);
+}
+
+function clearBattleExtras(reason) {
+  if (state.boost && state.boost.phase !== 'ended') boostEvent('ended', { reason });
+  state.boost = null;
+  state.powerups = [];
+  state.firstGift = null;
+  stateDirty = true;
 }
 
 function handleBattle(data) {
@@ -487,7 +544,8 @@ function handleBattle(data) {
     const me = hosts[config.hostUserId];
     if (me?.league) state.league = me.league;
     pushEvent('battle', { phase: 'started', opponents: Object.values(hosts).filter((h) => sideOf(h.id) !== 'mine').map((h) => h.name) });
-  } else if (action === 5 && state.battle && state.battle.id === id) {
+  } else if ((action === 5 || action === 6) && state.battle && state.battle.id === id) {
+    if (action === 6) state.battle.endedEarly = true;
     for (const [key, value] of entries(data.battleResult)) {
       const h = state.battle.hosts[key] || (state.battle.hosts[key] = { id: key });
       h.score = Number(value?.score) || h.score || 0;
@@ -496,9 +554,11 @@ function handleBattle(data) {
     const mine = state.battle.hosts[config.hostUserId];
     state.battle.phase = 'punishment';
     state.battle.endedAt = new Date().toISOString();
-    state.powerups = [];
+    clearBattleExtras(action === 6 ? 'battle ended early' : 'battle ended');
     state.battle.outcome = mine ? (mine.result === 0 ? 'won' : mine.result === 1 ? 'lost' : 'draw') : 'unknown';
-    pushEvent('battle', { phase: 'ended', outcome: state.battle.outcome, scores: Object.fromEntries(Object.values(state.battle.hosts).map((h) => [h.name || h.id, h.score])) });
+    pushEvent('battle', { phase: 'ended', early: action === 6, outcome: state.battle.outcome, scores: Object.fromEntries(Object.values(state.battle.hosts).map((h) => [h.name || h.id, h.score])) });
+  } else if (action === 12 || action === 6) {
+    clearBattleExtras('battle closed');
   }
   stateDirty = true;
 }
@@ -634,6 +694,7 @@ function handleOther(type, data) {
     }
     case 'WebcastLinkMicBattlePunishFinish': {
       if (state.battle) { state.battle.phase = 'over'; stateDirty = true; pushEvent('battle', { phase: 'over' }); }
+      clearBattleExtras('battle over');
       break;
     }
     default:
@@ -779,6 +840,7 @@ async function startEuler(apiKey) {
             const method = String(message.method || 'UnknownMessage');
             state.messageTypes[method] = (state.messageTypes[method] || 0) + 1;
             recordMessage(method, { undecoded: true }, message.payload);
+            handleUndecoded(method, message.payload);
           }
         }
         return original.call(this, batch);
