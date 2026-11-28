@@ -550,6 +550,8 @@ function handleBattle(data) {
     // isn't in the decoded message, so it stays null until we find it in the raw bytes.
     // Not every match has it, so this stays off until we find TikTok's signal in the raw bytes.
     if (config.firstGiftAlways) state.firstGift = { battleId: id, multiplier: null, announcedAt: startMs, startsAt: startMs, endsAt: startMs + FIRST_GIFT_MS };
+    state.battle.iceSetting = Number(bs.iceShowdownSetting ?? -1);
+    console.log(`  First Gift code for this match: ${state.battle.iceSetting} (tell Claude if TikTok showed x2, x3 or nothing)`);
     pushEvent('battle', { phase: 'started', opponents: Object.values(hosts).filter((h) => sideOf(h.id) !== 'mine').map((h) => h.name) });
   } else if ((action === 5 || action === 6) && state.battle && state.battle.id === id) {
     if (action === 6) state.battle.endedEarly = true;
