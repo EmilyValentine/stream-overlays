@@ -34,6 +34,7 @@ const DEFAULT_CONFIG = {
   multiplier: 2,
   festGifts: ['LIVE FEST 26', 'FEST Explorer', 'FEST Energy', 'FEST Showtime!', 'FEST World'],
   eulerApiKey: '',
+  record: true,
   blockVideo: true,
   logRawMessages: true
 };
@@ -48,7 +49,10 @@ function saveConfig() {
 }
 
 const config = loadConfig();
-const argUser = (process.argv[2] || '').replace(/^@/, '').trim();
+const REPLAY_INDEX = process.argv.indexOf('--replay');
+const REPLAY_FILE = REPLAY_INDEX > -1 ? process.argv[REPLAY_INDEX + 1] : null;
+const REPLAY_SPEED = Number(process.argv[process.argv.indexOf('--speed') + 1]) || 1;
+const argUser = (process.argv[2] && !process.argv[2].startsWith('--') ? process.argv[2] : '').replace(/^@/, '').trim();
 if (argUser) config.username = argUser;
 saveConfig();
 
@@ -60,6 +64,7 @@ const state = {
   session: { coins: 0, festCoins: 0, gifts: 0, likes: 0, follows: 0, shares: 0, chats: 0, joins: 0, startedAt: new Date().toISOString() },
   room: { viewers: 0, peakViewers: 0, totalViewers: 0, totalLikes: 0 },
   battle: null,
+  boost: null,
   recentChat: [],
   recentEvents: [],
   topGifters: [],
@@ -193,7 +198,7 @@ const server = http.createServer(async (req, res) => {
   let filePath = route === '/' ? '/index.html' : route === '/control' ? '/control.html' : route;
   try { filePath = decodeURIComponent(filePath); } catch { res.writeHead(400).end(); return; }
   const full = path.normalize(path.join(ROOT, filePath));
-  if (!full.startsWith(ROOT + path.sep) || PRIVATE_FILES.has(path.basename(full)) || full.includes(`${path.sep}browser-profile`) || full.includes(`${path.sep}node_modules`)) {
+  if (!full.startsWith(ROOT + path.sep) || PRIVATE_FILES.has(path.basename(full)) || full.includes(`${path.sep}browser-profile`) || full.includes(`${path.sep}node_modules`) || full.includes(`${path.sep}sessions${path.sep}`)) {
     res.writeHead(403).end('Forbidden');
     return;
   }
@@ -206,6 +211,39 @@ const server = http.createServer(async (req, res) => {
 
 // Keep SSE connections alive through idle periods.
 setInterval(() => { for (const res of clients) { try { res.write(': ping\n\n'); } catch { clients.delete(res); } } }, 20000);
+
+
+// ---------------------------------------------------------------- session recording
+// Every decoded message is saved to sessions/<date>.jsonl (private, ignored by git) so a stream
+// can be replayed later to test overlays: node live-bridge.mjs --replay sessions/<file> [--speed 2]
+
+let recorder = null;
+function recordMessage(type, data) {
+  if (!config.record || REPLAY_FILE) return;
+  try {
+    if (!recorder) {
+      const dir = path.join(ROOT, 'sessions');
+      fs.mkdirSync(dir, { recursive: true });
+      const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
+      recorder = fs.createWriteStream(path.join(dir, `${stamp}.jsonl`), { flags: 'a' });
+    }
+    recorder.write(`{"t":${Date.now()},"type":"${type}","data":${toJson(data)}}\n`);
+  } catch { /* recording is best-effort */ }
+}
+
+async function replaySession(file, speed) {
+  const full = path.isAbsolute(file) ? file : path.join(ROOT, file);
+  const lines = fs.readFileSync(full, 'utf8').split('\n').filter(Boolean);
+  setStatus('connected', `Replaying ${path.basename(full)} (${lines.length} messages, ${speed}x speed)`);
+  let prev = null, n = 0;
+  for (const line of lines) {
+    let rec; try { rec = JSON.parse(line); } catch { continue; }
+    if (prev !== null) await new Promise((r) => setTimeout(r, Math.min(10000, Math.max(0, (rec.t - prev) / speed))));
+    prev = rec.t;
+    handleMessages([{ method: rec.type, msgId: `replay-${n++}`, decodedData: { type: rec.type, data: rec.data } }], 'replay');
+  }
+  setStatus('offline', 'Replay finished');
+}
 
 // ---------------------------------------------------------------- message handling
 
@@ -240,6 +278,7 @@ function handleMessages(messages, source) {
     if (alreadySeen(id)) continue;
 
     state.messageTypes[type] = (state.messageTypes[type] || 0) + 1;
+    if (m.decodedData?.data && source !== 'replay') recordMessage(type, m.decodedData.data);
     state.bridge.lastEventAt = new Date().toISOString();
     if (state.bridge.status !== 'connected') setStatus('connected', `Receiving live data (${source})`);
 
@@ -278,6 +317,56 @@ function pushEvent(kind, extra) {
 
 let stateDirty = false;
 setInterval(() => { if (stateDirty) { stateDirty = false; broadcast('state', publicState()); } }, 1000);
+
+
+// ---------------------------------------------------------------- battle boost (x2 / x3) detection
+// Battle task messages: START announces the challenge (multiplier + duration), TASK_UPDATE reports
+// progress, TASK_SETTLE says whether it succeeded and when the boost window starts, REWARD_SETTLE ends it.
+// Which side earned it is a best guess from the message's room id (sideVerified stays false).
+
+function toMs(v) {
+  const n = Number(v);
+  if (!n) return 0;
+  return n < 1e12 ? n * 1000 : n;
+}
+
+function boostEvent(phase, extra = {}) {
+  state.boost = { ...(state.boost || {}), phase, ...extra, updatedAt: new Date().toISOString() };
+  pushEvent('boost', { phase, multiplier: state.boost.multiplier, side: state.boost.side, startsAt: state.boost.startsAt, endsAt: state.boost.endsAt });
+  stateDirty = true;
+}
+
+function handleBattleTask(data) {
+  const kind = Number(data.taskMessageType);
+  const roomId = String(data.common?.roomId ?? '');
+  const side = roomId && state.bridge.room ? (roomId === state.bridge.room ? 'mine' : 'opponent') : 'unknown';
+  const battleId = String(data.battleId ?? '');
+  if (kind === 0) {
+    const cfg = data.start?.config?.rewardConfig || {};
+    const multiplier = Number(cfg.rewardMultiple) || null;
+    const durationSec = Number(cfg.duration) || null;
+    state.boost = { battleId, side, sideVerified: false };
+    boostEvent('challenge', { multiplier, durationSec, progress: 0 });
+  } else if (kind === 1 && state.boost && state.boost.battleId === battleId) {
+    boostEvent('progress', { progress: Number(data.taskUpdate?.progress) || 0 });
+  } else if (kind === 2 && state.boost && state.boost.battleId === battleId) {
+    const result = Number(data.taskSettle?.result);
+    if (result === 1) { boostEvent('failed'); return; }
+    const startsAt = toMs(data.taskSettle?.rewardStartTimestamp) || toMs(data.taskSettle?.rewardStartTime) || Date.now();
+    const endsAt = startsAt + (Number(state.boost.durationSec) || 0) * 1000;
+    boostEvent(Date.now() >= startsAt ? 'active' : 'scheduled', { startsAt, endsAt, bothSucceeded: result === 2 });
+  } else if (kind === 3 && state.boost && state.boost.battleId === battleId && state.boost.phase !== 'ended') {
+    boostEvent('ended');
+  }
+}
+
+setInterval(() => {
+  const b = state.boost;
+  if (!b) return;
+  const now = Date.now();
+  if (b.phase === 'scheduled' && now >= b.startsAt) boostEvent('active');
+  else if (b.phase === 'active' && b.endsAt && now >= b.endsAt) boostEvent('ended');
+}, 500);
 
 function handleOther(type, data) {
   switch (type) {
@@ -318,6 +407,10 @@ function handleOther(type, data) {
       if (v) { state.room.viewers = v; state.room.peakViewers = Math.max(state.room.peakViewers, v); }
       if (Number(data.totalUser)) state.room.totalViewers = Number(data.totalUser);
       stateDirty = true;
+      break;
+    }
+    case 'WebcastLinkmicBattleTaskMessage': {
+      handleBattleTask(data);
       break;
     }
     case 'WebcastLinkMicBattle': {
@@ -659,6 +752,7 @@ server.listen(config.port, '127.0.0.1', async () => {
     return;
   }
   try {
+    if (REPLAY_FILE) { await replaySession(REPLAY_FILE, REPLAY_SPEED); return; }
     const key = eulerKey();
     if (key) await startEuler(key);
     else await startCapture();
@@ -676,4 +770,4 @@ server.on('error', (err) => {
   process.exit(1);
 });
 
-export { handleMessages, recordGift, findRankCandidates, state };
+export { handleMessages, recordGift, findRankCandidates, handleBattleTask, state };

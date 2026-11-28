@@ -67,6 +67,14 @@ https://www.eulerstream.com, copy your API key into a file called `euler-key.txt
 `eulerApiKey` field in `config.json`), and restart `start-live.bat`. With a key set, the bridge connects through
 Euler instead of opening Chrome. The key file is ignored by git.
 
+**Battle boosts:** the bridge spots x2/x3 battle challenges from TikTok's battle task messages and tracks
+challenge → progress → success/fail → active boost window → ended. It shows on the control page and is sent to
+overlays as `boost` events. Which side earned it is a best guess (`sideVerified: false`).
+
+**Recording and replay:** every stream is recorded to `sessions/` (private, ignored by git). Double-click
+`replay-last.bat` to replay the latest stream at 5x speed and test overlays without going live, or run
+`node live-bridge.mjs --replay sessions/<file> --speed 2`. Set `"record": false` in `config.json` to turn recording off.
+
 Points are counted as FEST gifts × 2 per coin and other gifts × 1 per coin, added to the synced total.
 Votes are not included, so sync from the app now and then. Messages that might contain rank information
 are saved to `bridge-log.jsonl`, and the control page flags any it spots.

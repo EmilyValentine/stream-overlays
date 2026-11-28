@@ -87,6 +87,7 @@
       <div class="row"><span class="muted">Chat messages</span><b id="chats">0</b></div>
       <div class="row"><span class="muted">Joins</span><b id="joins">0</b></div>
       <div class="row"><span class="muted">Viewers now / peak</span><b id="viewers">0</b></div>
+      <div class="row"><span class="muted">Battle boost</span><b id="boost">none</b></div>
       <h2 style="margin-top:16px">Top gifters</h2>
       <div id="gifters" class="muted">None yet</div>
     </section>
@@ -144,6 +145,8 @@
     $('shares').textContent = fmt(s.session.shares);
     $('chats').textContent = fmt(s.session.chats);
     $('joins').textContent = fmt(s.session.joins);
+    const bo = s.boost;
+    $('boost').textContent = !bo ? 'none' : `${bo.multiplier ? 'x' + bo.multiplier + ' ' : ''}${bo.phase}${bo.side && bo.side !== 'unknown' ? ' (' + bo.side + ')' : ''}${bo.phase === 'active' && bo.endsAt ? ' · ' + Math.max(0, Math.round((bo.endsAt - Date.now()) / 1000)) + 's left' : ''}`;
     $('viewers').textContent = s.room ? `${fmt(s.room.viewers)} / ${fmt(s.room.peakViewers)}` : '0';
     $('gifters').innerHTML = s.topGifters.length
       ? s.topGifters.map((g, i) => `<div class="row"><span>${i + 1}. ${escapeHtml(g.nickname)}</span><b>${fmt(g.coins)} coins</b></div>`).join('')
