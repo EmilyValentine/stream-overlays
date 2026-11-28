@@ -583,7 +583,7 @@ async function startEuler(apiKey) {
         setStatus('error', 'Euler says this needs a paid plan. The free key is not enough for signing.');
         return;
       }
-      if (/offline|not live|UserOffline/i.test(msg)) setStatus('watching', 'You are not live yet. Trying again in 60 seconds');
+      if (/offline|not live|UserOffline|isn't online|is not online/i.test(msg)) setStatus('offline', 'You are not live right now. Checking again every minute');
       else setStatus('error', `Euler connect failed: ${msg.slice(0, 160)}. Retrying in 60 seconds`);
       setTimeout(connect, Math.min(300000, 60000 * attempt));
     }
