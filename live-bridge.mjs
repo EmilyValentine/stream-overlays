@@ -545,10 +545,11 @@ function handleBattle(data) {
     state.battle = { id, phase: 'live', startedAt: new Date(startMs).toISOString(), endsAt: durationSec ? startMs + durationSec * 1000 : null, durationSec, hosts, supporters: {}, winner: null };
     const me = hosts[config.hostUserId];
     if (me?.league) state.league = me.league;
-    // First Gift bonus: every match opens with each viewer's first gift counting x2 or x3.
+    // First Gift bonus: some matches open with each viewer's first gift counting x2 or x3.
     // Measured from two matches: TikTok's countdown ends ~55s after startTimeMs. The multiplier
     // isn't in the decoded message, so it stays null until we find it in the raw bytes.
-    state.firstGift = { battleId: id, multiplier: null, announcedAt: startMs, startsAt: startMs, endsAt: startMs + FIRST_GIFT_MS };
+    // Not every match has it, so this stays off until we find TikTok's signal in the raw bytes.
+    if (config.firstGiftAlways) state.firstGift = { battleId: id, multiplier: null, announcedAt: startMs, startsAt: startMs, endsAt: startMs + FIRST_GIFT_MS };
     pushEvent('battle', { phase: 'started', opponents: Object.values(hosts).filter((h) => sideOf(h.id) !== 'mine').map((h) => h.name) });
   } else if ((action === 5 || action === 6) && state.battle && state.battle.id === id) {
     if (action === 6) state.battle.endedEarly = true;
