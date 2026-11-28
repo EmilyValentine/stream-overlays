@@ -4,3 +4,4 @@ tiktool-key.txt
 config.json
 bridge-log.jsonl
 browser-profile/
+bridge-status.json

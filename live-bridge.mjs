@@ -108,7 +108,7 @@ const TYPES = {
   '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.txt': 'text/plain; charset=utf-8',
   '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.gif': 'image/gif'
 };
-const PRIVATE_FILES = new Set(['config.json', 'bridge-log.jsonl', 'tiktool-key.txt', 'probe-log.jsonl']);
+const PRIVATE_FILES = new Set(['config.json', 'bridge-log.jsonl', 'bridge-status.json', 'tiktool-key.txt', 'probe-log.jsonl']);
 
 function cors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -424,15 +424,17 @@ async function startCapture() {
     return { kind: 'msg', result: deserializeMessage('ProtoMessageFetchResult', body) };
   }
 
+  const debugLines = [];
+  function debug(text) { console.log(`  [debug] ${text}`); debugLines.push(`${new Date().toISOString()} ${text}`); if (debugLines.length > 60) debugLines.shift(); }
   function reportError(key, text) {
     if (shownErrors.has(key) || shownErrors.size > 8) return;
     shownErrors.add(key);
-    console.log(`  [debug] ${text}`);
+    debug(text);
   }
 
   page.on('websocket', (ws) => {
     const url = safeUrl(ws.url());
-    console.log(`  [debug] Socket opened: ${url}`);
+    debug(`Socket opened: ${url}`);
     if (!/webcast|im\/push|\/ws\//i.test(url)) return;
     stats.sockets++;
     lastSocketAt = Date.now();
@@ -462,15 +464,22 @@ async function startCapture() {
       }
     });
     ws.on('close', () => {
-      console.log(`  [debug] Socket closed: ${url}`);
+      debug(`Socket closed: ${url}`);
       setStatus('watching', 'Live connection closed, waiting for it to reopen');
       lastSocketAt = 0;
     });
   });
 
+  const STATUS_FILE = path.join(ROOT, 'bridge-status.json');
+  const writeStatus = () => {
+    try {
+      fs.writeFileSync(STATUS_FILE, JSON.stringify({ at: new Date().toISOString(), url: page.isClosed() ? null : safeUrl(page.url()), stats, bridge: state.bridge, points: state.points, messageTypes: state.messageTypes, rankCandidates: state.rankCandidates, debug: debugLines }, null, 2));
+    } catch { /* ignore */ }
+  };
   setInterval(() => {
     console.log(`  [stats] sockets ${stats.sockets} | frames ${stats.frames} | decoded ${stats.decoded} | messages ${stats.messages} | errors ${stats.errors} | text ${stats.other}`);
   }, 30000);
+  setInterval(writeStatus, 10000);
 
   page.on('response', (response) => { sniffHttp(response).catch(() => {}); });
 
