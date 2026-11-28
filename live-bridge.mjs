@@ -325,7 +325,7 @@ function handleMessages(messages, source) {
     if (m.decodedData?.data && source !== 'replay') {
       const d = m.decodedData.data;
       const sparse = Object.keys(d).filter((k) => k !== 'common' && d[k] !== undefined && d[k] !== null && d[k] !== '' && !(Array.isArray(d[k]) && !d[k].length)).length === 0;
-      const keepRaw = sparse || /Banner|Rank|Activity|Campaign|Fest|Toast|Notice/i.test(type);
+      const keepRaw = sparse || /Banner|Rank|Activity|Campaign|Fest|Toast|Notice|Battle|LinkMic|Gameplay/i.test(type) && !/Armies/.test(type);
       recordMessage(type, d, keepRaw ? m.payload : null);
     }
     state.bridge.lastEventAt = new Date().toISOString();
