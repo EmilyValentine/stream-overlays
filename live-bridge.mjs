@@ -69,6 +69,7 @@ const state = {
   room: { viewers: 0, peakViewers: 0, totalViewers: 0, totalLikes: 0 },
   battle: null,
   boost: null,
+  powerups: [],
   league: null,
   recentChat: [],
   recentEvents: [],
@@ -460,7 +461,10 @@ function handleBattle(data) {
       hosts[key] = hosts[key] || { id: key, score: 0 };
       hosts[key].festEstimate = Number(value?.estimatedScore) || 0;
     }
-    state.battle = { id, phase: 'live', startedAt: new Date().toISOString(), hosts, supporters: {}, winner: null };
+    const bs = data.battleSettings || {};
+    const startMs = Number(bs.startTimeMs) || Date.now();
+    const durationSec = (Number(bs.duration) || 0) + (Number(bs.extraDurationSecond) || 0);
+    state.battle = { id, phase: 'live', startedAt: new Date(startMs).toISOString(), endsAt: durationSec ? startMs + durationSec * 1000 : null, durationSec, hosts, supporters: {}, winner: null };
     const me = hosts[config.hostUserId];
     if (me?.league) state.league = me.league;
     pushEvent('battle', { phase: 'started', opponents: Object.values(hosts).filter((h) => sideOf(h.id) !== 'mine').map((h) => h.name) });
@@ -471,7 +475,9 @@ function handleBattle(data) {
       h.result = Number(value?.result);
     }
     const mine = state.battle.hosts[config.hostUserId];
-    state.battle.phase = 'ended';
+    state.battle.phase = 'punishment';
+    state.battle.endedAt = new Date().toISOString();
+    state.powerups = [];
     state.battle.outcome = mine ? (mine.result === 0 ? 'won' : mine.result === 1 ? 'lost' : 'draw') : 'unknown';
     pushEvent('battle', { phase: 'ended', outcome: state.battle.outcome, scores: Object.fromEntries(Object.values(state.battle.hosts).map((h) => [h.name || h.id, h.score])) });
   }
@@ -481,13 +487,65 @@ function handleBattle(data) {
 function handleArmies(data) {
   const id = String(data.battleId || '');
   if (!state.battle || state.battle.id !== id) return;
+  if (data.triggerCriticalStrike) {
+    let name = '';
+    for (const list of Object.values(state.battle.supporters || {})) for (const u of list) if (u && u.id === String(data.fromUserId)) name = u.name;
+    pushEvent('crit', { user: String(data.fromUserId || ''), nickname: name, diamonds: Number(data.totalDiamondCount) || 0 });
+  }
   for (const [key, value] of entries(data.armies)) {
     const h = state.battle.hosts[key] || (state.battle.hosts[key] = { id: key });
     h.score = Number(value?.hostscore ?? value?.hostScore) || 0;
-    state.battle.supporters[key] = (value?.userArmies || []).slice(0, 3).map((u) => ({ name: u.nickname || u.nickName || '', score: Number(u.score) || 0 }));
+    state.battle.supporters[key] = (value?.userArmies || []).slice(0, 3).map((u) => ({ id: String(u.userId || ''), name: u.nickname || u.nickName || '', score: Number(u.score) || 0 }));
   }
   stateDirty = true;
 }
+
+
+// ---------------------------------------------------------------- battle power-ups (item cards)
+// LinkMicBattleItemCard carries a use<Name>Card object with cardInfo (who sent it, when it starts,
+// how long it lasts, multiplier and crit chance) and toAnchorId (the creator it helps).
+
+const CARD_NAMES = { pm_mt_boost_crit_name: 'Crit Glove' };
+
+function cardLabel(key, pattern) {
+  if (CARD_NAMES[key]) return CARD_NAMES[key];
+  const fromPattern = String(pattern || '').match(/sent \d+ ([^{}]+)$/i);
+  if (fromPattern) return fromPattern[1].replace(/\b\w/g, (c) => c.toUpperCase());
+  return String(key || 'Power-up').replace(/^pm_mt_|_name$/g, '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function handleItemCard(data) {
+  for (const [field, value] of Object.entries(data)) {
+    if (!/^use.*Card$/i.test(field) || !value || typeof value !== 'object') continue;
+    const info = value.cardInfo || {};
+    const v = { ...value, ...info }; // details sit inside cardInfo in the current schema
+    const user = info.sendUser?.user || {};
+    const startsAt = (Number(v.effectTimeSec) || Number(v.sendTimeSec) || Date.now() / 1000) * 1000;
+    const duration = Number(v.effectLastDuration) || 0;
+    const target = String(v.toAnchorIdStr || v.toAnchorId || data.anchorId || '');
+    const p = {
+      id: `${data.battleId}:${field}:${startsAt}`,
+      type: field.replace(/^use|Card$/g, ''),
+      name: cardLabel(info.cardNameKey, data.displayContent?.defaultPattern),
+      multiple: Number(v.multiple) || null,
+      critLow: Number(v.criticalStrikeRateLow) || null,
+      critHigh: Number(v.criticalStrikeRateHigh) || null,
+      side: sideOf(target),
+      by: user.nickName || user.nickname || user.displayId || 'Someone',
+      startsAt, endsAt: duration ? startsAt + duration * 1000 : null
+    };
+    state.powerups = state.powerups.filter((x) => x.id !== p.id).concat(p);
+    pushEvent('powerup', p);
+    stateDirty = true;
+  }
+}
+
+setInterval(() => {
+  const now = Date.now();
+  const before = state.powerups.length;
+  state.powerups = state.powerups.filter((p) => !p.endsAt || p.endsAt > now);
+  if (state.powerups.length !== before) stateDirty = true;
+}, 1000);
 
 function handleOther(type, data) {
   switch (type) {
@@ -540,6 +598,14 @@ function handleOther(type, data) {
     }
     case 'WebcastLinkMicArmies': {
       handleArmies(data);
+      break;
+    }
+    case 'WebcastLinkMicBattleItemCard': {
+      handleItemCard(data);
+      break;
+    }
+    case 'WebcastLinkMicBattlePunishFinish': {
+      if (state.battle) { state.battle.phase = 'over'; stateDirty = true; pushEvent('battle', { phase: 'over' }); }
       break;
     }
     default:
@@ -669,7 +735,7 @@ async function startEuler(apiKey) {
   const STATUS_FILE = path.join(ROOT, 'bridge-status.json');
   setInterval(() => {
     try {
-      fs.writeFileSync(STATUS_FILE, JSON.stringify({ at: new Date().toISOString(), mode: 'euler', ws: wsStats, bridge: state.bridge, points: state.points, session: state.session, room: state.room, battle: state.battle, boost: state.boost, league: state.league || null, leagueProgress: state.leagueProgress || null, lastGift: state.lastGift, messageTypes: state.messageTypes, rankCandidates: state.rankCandidates, rankHint: state.rankHint, debug: eulerLog }, null, 2));
+      fs.writeFileSync(STATUS_FILE, JSON.stringify({ at: new Date().toISOString(), mode: 'euler', ws: wsStats, bridge: state.bridge, points: state.points, session: state.session, room: state.room, battle: state.battle, boost: state.boost, powerups: state.powerups, league: state.league || null, leagueProgress: state.leagueProgress || null, lastGift: state.lastGift, messageTypes: state.messageTypes, rankCandidates: state.rankCandidates, rankHint: state.rankHint, debug: eulerLog }, null, 2));
     } catch { /* ignore */ }
   }, 10000);
   const connect = async () => {

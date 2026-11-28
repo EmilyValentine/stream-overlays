@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Battle Boosts and Power-ups</title>
+<!--
+  Battle boost and power-up overlay — stream overlay
+  Browser / Link source size: 760 x 260 (scales to any size). Transparent background.
+  Needs live-bridge.mjs. Shows nothing until a boost challenge, boost or power-up is happening.
+
+    bg       transparent | green | dark
+    demo=1   Show sample states for positioning
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600;700&family=Outfit:wght@600;800;900&display=swap" rel="stylesheet">
+<style>
+  :root{--blush:#f6e6f0;--muted:#e877ad;--mine1:#c41f63;--mine2:#8b5cff;--their1:#1f6f8b;--their2:#3a3f8f;--gold:#f2c46d}
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:100%;height:100%;background:transparent;overflow:hidden}
+  body.bg-green{background:#00b140} body.bg-dark{background:#0b0614}
+  #stage{position:absolute;left:0;top:0;width:760px;height:260px;transform-origin:0 0}
+
+  .boost{position:absolute;left:20px;top:16px;width:720px;height:118px;border-radius:60px;
+    background:linear-gradient(100deg,#2a0a3d 0%,#1a0630 55%,#10082a 100%);
+    box-shadow:0 0 0 1.5px rgba(255,95,162,.45),0 0 12px rgba(255,45,122,.22);
+    opacity:0;transform:translateY(-12px) scale(.97);transition:opacity .35s,transform .35s}
+  .boost.show{opacity:1;transform:none}
+  .mult{position:absolute;left:10px;top:9px;width:100px;height:100px;border-radius:50%;display:grid;place-items:center;
+    background:radial-gradient(circle at 35% 30%,#e8559a,#c41f63 50%,#6e0c3c 100%);
+    box-shadow:0 0 0 4px #1a0630,0 0 0 6px rgba(255,95,162,.55);font:900 44px/1 Outfit,sans-serif;color:var(--blush)}
+  .boost.active .mult{animation:pulse 1.2s ease-in-out infinite}
+  @keyframes pulse{50%{box-shadow:0 0 0 4px #1a0630,0 0 0 6px rgba(242,196,109,.8),0 0 22px rgba(242,196,109,.45)}}
+  .btext{position:absolute;left:130px;top:22px;right:34px}
+  .bk{font:800 16px/1 Outfit,sans-serif;letter-spacing:.24em;color:var(--muted)}
+  .bline{margin-top:8px;display:flex;align-items:baseline;gap:12px;white-space:nowrap}
+  .bmain{font:700 40px/1 Fredoka,sans-serif;color:var(--blush)}
+  .bsub{font:800 18px/1 Outfit,sans-serif;color:var(--muted)}
+  .boost.active .bmain{color:var(--gold)}
+  .boost.failed .bmain{color:#b9a7c7}
+  .bbar{position:absolute;left:130px;right:34px;bottom:18px;height:7px;border-radius:99px;background:rgba(255,255,255,.14);overflow:hidden}
+  .bfill{height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,var(--mine1),var(--mine2));transition:width .5s linear}
+  .boost.active .bfill{background:linear-gradient(90deg,#d89a3a,var(--gold))}
+
+  .cards{position:absolute;left:20px;top:150px;width:720px;display:flex;gap:12px;flex-wrap:wrap}
+  .card{display:flex;align-items:center;gap:12px;padding:10px 18px 10px 10px;border-radius:40px;min-width:330px;
+    background:linear-gradient(100deg,#2a0a3d,#140728);box-shadow:0 0 0 1.5px rgba(255,95,162,.45);
+    animation:in .4s cubic-bezier(.2,1.2,.4,1)}
+  .card.theirs{background:linear-gradient(100deg,#0f2a3a,#0d1530);box-shadow:0 0 0 1.5px rgba(80,180,220,.45)}
+  @keyframes in{from{opacity:0;transform:translateY(10px) scale(.95)}to{opacity:1;transform:none}}
+  .cicon{width:54px;height:54px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,var(--mine1),var(--mine2));font:900 20px/1 Outfit,sans-serif;color:var(--blush)}
+  .card.theirs .cicon{background:linear-gradient(135deg,var(--their1),var(--their2))}
+  .ctext{min-width:0}
+  .cname{font:700 22px/1.1 Fredoka,sans-serif;color:var(--blush);white-space:nowrap}
+  .cmeta{font:700 14px/1.3 Outfit,sans-serif;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:230px}
+  .card.theirs .cmeta{color:#8fd0e8}
+  .ctime{margin-left:auto;font:700 24px/1 Fredoka,sans-serif;color:var(--blush)}
+
+  .crit{position:absolute;right:30px;top:120px;font:900 34px/1 Outfit,sans-serif;font-style:italic;color:var(--gold);
+    text-shadow:0 2px 3px rgba(0,0,0,.5);animation:crit 1.6s cubic-bezier(.2,1.3,.4,1) forwards;pointer-events:none}
+  @keyframes crit{0%{opacity:0;transform:scale(.4) rotate(-8deg)}20%{opacity:1;transform:scale(1.15) rotate(-4deg)}70%{opacity:1;transform:scale(1) rotate(-4deg)}100%{opacity:0;transform:translateY(-20px) rotate(-4deg)}}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="boost" id="boost">
+    <div class="mult" id="mult">×2</div>
+    <div class="btext">
+      <div class="bk" id="bk">BOOST CHALLENGE</div>
+      <div class="bline"><span class="bmain" id="bmain">–</span><span class="bsub" id="bsub"></span></div>
+    </div>
+    <div class="bbar"><div class="bfill" id="bfill"></div></div>
+  </div>
+  <div class="cards" id="cards"></div>
+</div>
+<script>
+(() => {
+  const q = new URLSearchParams(location.search);
+  if (q.get('bg') === 'green') document.body.classList.add('bg-green');
+  if (q.get('bg') === 'dark') document.body.classList.add('bg-dark');
+  const stage = document.getElementById('stage');
+  const fit = () => { const s = Math.min(innerWidth / 760, innerHeight / 260); stage.style.transform = `translate(${(innerWidth - 760 * s) / 2}px,${(innerHeight - 260 * s) / 2}px) scale(${s})`; };
+  addEventListener('resize', fit); fit();
+  const $ = (id) => document.getElementById(id);
+  const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const mmss = (ms) => { const t = Math.max(0, Math.ceil(ms / 1000)); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; };
+
+  let boost = null, failedUntil = 0, powerups = [];
+
+  function renderBoost() {
+    const el = $('boost');
+    const now = Date.now();
+    const b = boost;
+    const visible = b && (['challenge', 'progress', 'scheduled', 'active'].includes(b.phase) || (b.phase === 'failed' && now < failedUntil));
+    el.classList.toggle('show', Boolean(visible));
+    if (!visible) return;
+    el.classList.toggle('active', b.phase === 'active');
+    el.classList.toggle('failed', b.phase === 'failed');
+    $('mult').textContent = b.multiplier ? `×${b.multiplier}` : '×?';
+    const side = b.side === 'opponent' ? ' · THEIRS' : '';
+    if (b.phase === 'active') {
+      $('bk').textContent = 'BOOST ACTIVE' + side;
+      $('bmain').textContent = b.endsAt ? mmss(b.endsAt - now) : 'NOW';
+      $('bsub').textContent = 'GIFTS COUNT DOUBLE'.replace('DOUBLE', b.multiplier === 3 ? 'TRIPLE' : 'DOUBLE');
+      $('bfill').style.width = b.endsAt && b.startsAt ? Math.max(0, Math.min(100, (b.endsAt - now) / (b.endsAt - b.startsAt) * 100)) + '%' : '100%';
+    } else if (b.phase === 'scheduled') {
+      $('bk').textContent = 'BOOST UNLOCKED' + side;
+      $('bmain').textContent = b.startsAt ? `in ${mmss(b.startsAt - now)}` : 'SOON';
+      $('bsub').textContent = b.durationSec ? `FOR ${b.durationSec}s` : '';
+      $('bfill').style.width = '100%';
+    } else if (b.phase === 'failed') {
+      $('bk').textContent = 'BOOST CHALLENGE' + side;
+      $('bmain').textContent = 'MISSED';
+      $('bsub').textContent = 'NEXT TIME';
+      $('bfill').style.width = '0%';
+    } else {
+      $('bk').textContent = 'BOOST CHALLENGE' + side;
+      $('bmain').textContent = 'UNLOCK IT';
+      $('bsub').textContent = b.durationSec ? `${b.multiplier ? '×' + b.multiplier + ' ' : ''}FOR ${b.durationSec}s` : '';
+      let p = Number(b.progress) || 0; if (p > 1) p = p / 100;
+      $('bfill').style.width = Math.max(2, Math.min(100, p * 100)) + '%';
+    }
+  }
+
+  function renderCards() {
+    const now = Date.now();
+    const live = powerups.filter((p) => !p.endsAt || p.endsAt > now);
+    $('cards').innerHTML = live.map((p) => {
+      const theirs = p.side === 'opponent';
+      const chance = p.critLow ? ` · ${p.critLow}${p.critHigh && p.critHigh !== p.critLow ? '–' + p.critHigh : ''}% crit` : '';
+      return `<div class="card${theirs ? ' theirs' : ''}" data-id="${esc(p.id)}">
+        <div class="cicon">${p.multiple ? '×' + p.multiple : '★'}</div>
+        <div class="ctext"><div class="cname">${esc(p.name)}${theirs ? ' · THEIRS' : ''}</div><div class="cmeta">by ${esc(p.by)}${chance}</div></div>
+        <div class="ctime">${p.endsAt ? mmss(p.endsAt - now) : ''}</div></div>`;
+    }).join('');
+  }
+
+  setInterval(() => { renderBoost(); renderCards(); }, 250);
+
+  function crit(text) {
+    const el = document.createElement('div');
+    el.className = 'crit'; el.textContent = text;
+    stage.appendChild(el); setTimeout(() => el.remove(), 1700);
+  }
+
+  if (q.get('demo') === '1') {
+    const now = Date.now();
+    boost = { phase: 'active', multiplier: 2, side: 'mine', startsAt: now - 10000, endsAt: now + 40000, durationSec: 50 };
+    powerups = [
+      { id: 'a', name: 'Crit Glove', multiple: 5, critLow: 20, critHigh: 30, side: 'mine', by: 'Audrey', endsAt: now + 23000 },
+      { id: 'b', name: 'Crit Glove', multiple: 5, critLow: 20, critHigh: 30, side: 'opponent', by: 'Natie', endsAt: now + 9000 }
+    ];
+    setInterval(() => crit('CRITICAL HIT!'), 4000);
+  }
+
+  const BRIDGE = q.get('bridge') || (/^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? location.origin : 'http://localhost:3000');
+  if (q.get('demo') !== '1' && 'EventSource' in window) {
+    try {
+      const es = new EventSource(BRIDGE + '/events');
+      es.addEventListener('state', (e) => {
+        const st = JSON.parse(e.data);
+        const prev = boost?.phase;
+        boost = st.boost || null;
+        if (boost && boost.phase === 'failed' && prev !== 'failed') failedUntil = Date.now() + 6000;
+        powerups = st.powerups || [];
+      });
+      es.addEventListener('event', (e) => {
+        const ev = JSON.parse(e.data);
+        if (ev.kind === 'crit') crit(ev.nickname ? `CRIT! ${ev.nickname}` : 'CRITICAL HIT!');
+      });
+    } catch { /* no bridge */ }
+  }
+
+  let loaded = q.get('v');
+  async function check() {
+    try {
+      const r = await fetch(new URL('version.txt?t=' + Date.now(), location.href), { cache: 'no-store' });
+      if (!r.ok) return; const v = (await r.text()).trim(); if (!v) return;
+      if (loaded === null) { loaded = v; return; }
+      if (v !== loaded) { const u = new URL(location.href); u.searchParams.set('v', v); location.replace(u.href); }
+    } catch {}
+  }
+  check(); setInterval(check, 60000);
+})();
+</script>
+</body>
+</html>
