@@ -515,6 +515,11 @@ function cardLabel(key, pattern) {
 }
 
 function handleItemCard(data) {
+  // msgType 4: "Contributors got match power-ups." (who earned power-ups this battle)
+  if (data.awardCardNotice) {
+    const users = (data.awardCardNotice.awardedUsers || []).map((a) => a?.user?.nickName || a?.user?.nickname || a?.user?.displayId).filter(Boolean);
+    if (users.length) pushEvent('powerupAwarded', { users, side: 'mine' });
+  }
   for (const [field, value] of Object.entries(data)) {
     if (!/^use.*Card$/i.test(field) || !value || typeof value !== 'object') continue;
     const info = value.cardInfo || {};

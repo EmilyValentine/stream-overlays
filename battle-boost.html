@@ -6,7 +6,7 @@
 <title>Battle Boosts and Power-ups</title>
 <!--
   Battle boost and power-up overlay — stream overlay
-  Browser / Link source size: 760 x 260 (scales to any size). Transparent background.
+  Browser / Link source size: 760 x 300 (scales to any size). Transparent background.
   Needs live-bridge.mjs. Shows nothing until a boost challenge, boost or power-up is happening.
 
     bg       transparent | green | dark
@@ -20,7 +20,7 @@
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{width:100%;height:100%;background:transparent;overflow:hidden}
   body.bg-green{background:#00b140} body.bg-dark{background:#0b0614}
-  #stage{position:absolute;left:0;top:0;width:760px;height:260px;transform-origin:0 0}
+  #stage{position:absolute;left:0;top:0;width:760px;height:300px;transform-origin:0 0}
 
   .boost{position:absolute;left:20px;top:16px;width:720px;height:118px;border-radius:60px;
     background:linear-gradient(100deg,#2a0a3d 0%,#1a0630 55%,#10082a 100%);
@@ -60,6 +60,10 @@
   .crit{position:absolute;right:30px;top:120px;font:900 34px/1 Outfit,sans-serif;font-style:italic;color:var(--gold);
     text-shadow:0 2px 3px rgba(0,0,0,.5);animation:crit 1.6s cubic-bezier(.2,1.3,.4,1) forwards;pointer-events:none}
   @keyframes crit{0%{opacity:0;transform:scale(.4) rotate(-8deg)}20%{opacity:1;transform:scale(1.15) rotate(-4deg)}70%{opacity:1;transform:scale(1) rotate(-4deg)}100%{opacity:0;transform:translateY(-20px) rotate(-4deg)}}
+  .award{position:absolute;left:50%;top:244px;transform:translateX(-50%);max-width:700px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    padding:10px 22px;border-radius:40px;background:linear-gradient(90deg,#c41f63,#8b5cff);color:#f6e6f0;font:700 22px/1 Fredoka,sans-serif;
+    box-shadow:0 0 12px rgba(255,45,122,.35);animation:award 4.2s ease forwards;pointer-events:none}
+  @keyframes award{0%{opacity:0;transform:translate(-50%,10px) scale(.9)}10%{opacity:1;transform:translate(-50%,0) scale(1)}85%{opacity:1}100%{opacity:0;transform:translate(-50%,-10px)}}
   @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -81,7 +85,7 @@
   if (q.get('bg') === 'green') document.body.classList.add('bg-green');
   if (q.get('bg') === 'dark') document.body.classList.add('bg-dark');
   const stage = document.getElementById('stage');
-  const fit = () => { const s = Math.min(innerWidth / 760, innerHeight / 260); stage.style.transform = `translate(${(innerWidth - 760 * s) / 2}px,${(innerHeight - 260 * s) / 2}px) scale(${s})`; };
+  const fit = () => { const s = Math.min(innerWidth / 760, innerHeight / 300); stage.style.transform = `translate(${(innerWidth - 760 * s) / 2}px,${(innerHeight - 300 * s) / 2}px) scale(${s})`; };
   addEventListener('resize', fit); fit();
   const $ = (id) => document.getElementById(id);
   const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -139,6 +143,13 @@
 
   setInterval(() => { renderBoost(); renderCards(); }, 250);
 
+  function award(users) {
+    const el = document.createElement('div');
+    el.className = 'award';
+    el.textContent = users.length === 1 ? `${users[0]} earned a power-up!` : `${users.slice(0, 3).join(', ')} earned power-ups!`;
+    stage.appendChild(el); setTimeout(() => el.remove(), 4200);
+  }
+
   function crit(text) {
     const el = document.createElement('div');
     el.className = 'crit'; el.textContent = text;
@@ -153,6 +164,7 @@
       { id: 'b', name: 'Crit Glove', multiple: 5, critLow: 20, critHigh: 30, side: 'opponent', by: 'Natie', endsAt: now + 9000 }
     ];
     setInterval(() => crit('CRITICAL HIT!'), 4000);
+    setTimeout(() => award(['💜 - J - 💜']), 1200);
   }
 
   const BRIDGE = q.get('bridge') || (/^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? location.origin : 'http://localhost:3000');
@@ -169,6 +181,7 @@
       es.addEventListener('event', (e) => {
         const ev = JSON.parse(e.data);
         if (ev.kind === 'crit') crit(ev.nickname ? `CRIT! ${ev.nickname}` : 'CRITICAL HIT!');
+        if (ev.kind === 'powerupAwarded' && ev.users?.length) award(ev.users);
       });
     } catch { /* no bridge */ }
   }
