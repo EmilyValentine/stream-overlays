@@ -489,7 +489,7 @@ function readProto(buf) {
   return out;
 }
 
-// WebcastBattleGameplayMessage = TikTok's "First Gift xN gifting points" bonus during a match.
+// WebcastBattleGameplayMessage = TikTok's "First Gift xN gifting points" bonus: each viewer's first gift in the window counts xN.
 // Seen layout: 2 = battleId, 5 = { 1: multiplier, 2: window start ms, 3: window end ms }.
 // TikTok shows its countdown from when the message arrives until the window starts.
 function handleGameplay(payload) {

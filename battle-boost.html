@@ -109,7 +109,7 @@
       $('mult').textContent = fg.multiplier ? `×${fg.multiplier}` : '×2';
       $('bk').textContent = 'FIRST GIFT BONUS';
       $('bmain').textContent = fg.startsAt > now ? mmss(fg.startsAt - now) : 'NOW';
-      $('bsub').textContent = `FIRST GIFT GETS ×${fg.multiplier || 2} POINTS`;
+      $('bsub').textContent = `EVERYONE'S FIRST GIFT ×${fg.multiplier || 2}`;
       const span = (fg.startsAt - (fg.announcedAt || fg.startsAt - 10000)) || 10000;
       $('bfill').style.width = fg.startsAt > now ? Math.max(0, Math.min(100, (fg.startsAt - now) / span * 100)) + '%' : '100%';
       return;
