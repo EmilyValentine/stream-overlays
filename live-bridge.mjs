@@ -57,7 +57,11 @@ saveConfig();
 const state = {
   bridge: { status: 'starting', message: 'Starting up', lastEventAt: null, room: null },
   points: { start: config.startPoints, session: 0, total: config.startPoints, goal: config.goal, rank: config.rank, multiplier: config.multiplier },
-  session: { coins: 0, festCoins: 0, gifts: 0, likes: 0, startedAt: new Date().toISOString() },
+  session: { coins: 0, festCoins: 0, gifts: 0, likes: 0, follows: 0, shares: 0, chats: 0, joins: 0, startedAt: new Date().toISOString() },
+  room: { viewers: 0, peakViewers: 0, totalViewers: 0, totalLikes: 0 },
+  battle: null,
+  recentChat: [],
+  recentEvents: [],
   topGifters: [],
   lastGift: null,
   rankHint: null,
@@ -217,7 +221,7 @@ function alreadySeen(id) {
 }
 
 const log = fs.createWriteStream(LOG_FILE, { flags: 'a' });
-const LOG_TYPE = /rank|banner|campaign|activity|fest|notice|toast|bottom|barrage|capsule|guide|goal|pin|hourly|panel|board|task|mission|league/i;
+const LOG_TYPE = /rank|banner|campaign|activity|fest|notice|toast|bottom|barrage|capsule|guide|goal|pin|hourly|panel|board|task|mission|league|battle|armies/i;
 const LOG_TEXT = /fest|rank|points away|leaderboard|campaign|power league|league/i;
 const RANK_TEXT = /(points? away from (?:becoming |reaching )?#\s?\d{1,5}|#\s?\d{1,5}\b[^"]{0,40}(?:rank|league)|rank(?:ed)?[^"]{0,20}#\s?\d{1,5})/i;
 
@@ -242,7 +246,7 @@ function handleMessages(messages, source) {
     const data = m.decodedData?.data;
 
     if (type === 'WebcastGiftMessage' && data) handleGift(data);
-    else if (type === 'WebcastLikeMessage' && data) state.session.likes += Number(data.likeCount) || 0;
+    else if (data) handleOther(type, data);
 
     if (config.logRawMessages && data && type !== 'WebcastChatMessage' && type !== 'WebcastLikeMessage' && type !== 'WebcastMemberMessage') {
       let json;
@@ -257,6 +261,73 @@ function handleMessages(messages, source) {
         }
       }
     }
+  }
+}
+
+
+function who(user) {
+  return { user: user?.uniqueId || user?.displayId || '', nickname: user?.nickname || user?.uniqueId || user?.displayId || 'Someone' };
+}
+
+function pushEvent(kind, extra) {
+  const ev = { kind, at: new Date().toISOString(), ...extra };
+  state.recentEvents.unshift(ev);
+  if (state.recentEvents.length > 30) state.recentEvents.pop();
+  broadcast('event', ev);
+}
+
+let stateDirty = false;
+setInterval(() => { if (stateDirty) { stateDirty = false; broadcast('state', publicState()); } }, 1000);
+
+function handleOther(type, data) {
+  switch (type) {
+    case 'WebcastLikeMessage': {
+      const n = Number(data.count ?? data.likeCount) || 0;
+      state.session.likes += n;
+      if (Number(data.total)) state.room.totalLikes = Number(data.total);
+      pushEvent('like', { ...who(data.user), count: n, total: state.room.totalLikes });
+      stateDirty = true;
+      break;
+    }
+    case 'WebcastSocialMessage': {
+      const key = String(data.common?.displayText?.key || '').toLowerCase();
+      const isShare = key.includes('share') || Number(data.shareCount) > 0 || Number(data.shareType) > 0;
+      const isFollow = !isShare && (key.includes('follow') || Number(data.action) === 1);
+      if (isShare) { state.session.shares++; pushEvent('share', who(data.user)); }
+      else if (isFollow) { state.session.follows++; pushEvent('follow', who(data.user)); }
+      stateDirty = true;
+      break;
+    }
+    case 'WebcastChatMessage': {
+      state.session.chats++;
+      const c = { ...who(data.user), text: String(data.content || ''), at: new Date().toISOString() };
+      state.recentChat.unshift(c);
+      if (state.recentChat.length > 30) state.recentChat.pop();
+      broadcast('chat', c);
+      stateDirty = true;
+      break;
+    }
+    case 'WebcastMemberMessage': {
+      state.session.joins++;
+      pushEvent('join', who(data.user));
+      stateDirty = true;
+      break;
+    }
+    case 'WebcastRoomUserSeqMessage': {
+      const v = Number(data.total) || 0;
+      if (v) { state.room.viewers = v; state.room.peakViewers = Math.max(state.room.peakViewers, v); }
+      if (Number(data.totalUser)) state.room.totalViewers = Number(data.totalUser);
+      stateDirty = true;
+      break;
+    }
+    case 'WebcastLinkMicBattle': {
+      state.battle = { id: String(data.battleId || ''), action: Number(data.action), at: new Date().toISOString() };
+      pushEvent('battle', { action: Number(data.action) });
+      stateDirty = true;
+      break;
+    }
+    default:
+      break;
   }
 }
 

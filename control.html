@@ -82,6 +82,11 @@
       <div class="row"><span class="muted">FEST gift coins</span><b id="festCoins">0</b></div>
       <div class="row"><span class="muted">Gifts</span><b id="gifts">0</b></div>
       <div class="row"><span class="muted">Likes</span><b id="likes">0</b></div>
+      <div class="row"><span class="muted">Follows</span><b id="follows">0</b></div>
+      <div class="row"><span class="muted">Shares</span><b id="shares">0</b></div>
+      <div class="row"><span class="muted">Chat messages</span><b id="chats">0</b></div>
+      <div class="row"><span class="muted">Joins</span><b id="joins">0</b></div>
+      <div class="row"><span class="muted">Viewers now / peak</span><b id="viewers">0</b></div>
       <h2 style="margin-top:16px">Top gifters</h2>
       <div id="gifters" class="muted">None yet</div>
     </section>
@@ -135,6 +140,11 @@
     $('festCoins').textContent = fmt(s.session.festCoins);
     $('gifts').textContent = fmt(s.session.gifts);
     $('likes').textContent = fmt(s.session.likes);
+    $('follows').textContent = fmt(s.session.follows);
+    $('shares').textContent = fmt(s.session.shares);
+    $('chats').textContent = fmt(s.session.chats);
+    $('joins').textContent = fmt(s.session.joins);
+    $('viewers').textContent = s.room ? `${fmt(s.room.viewers)} / ${fmt(s.room.peakViewers)}` : '0';
     $('gifters').innerHTML = s.topGifters.length
       ? s.topGifters.map((g, i) => `<div class="row"><span>${i + 1}. ${escapeHtml(g.nickname)}</span><b>${fmt(g.coins)} coins</b></div>`).join('')
       : 'None yet';
