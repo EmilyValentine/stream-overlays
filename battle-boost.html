@@ -203,6 +203,7 @@
       es.addEventListener('event', (e) => {
         const ev = JSON.parse(e.data);
         if (ev.kind === 'crit') crit('×5 HIT!');
+        if (ev.kind === 'firstGiftHit') crit(`${String(ev.nickname || '').slice(0, 14)} ×${ev.multiplier}!`);
         if (ev.kind === 'powerupAwarded' && ev.users?.length) award(ev.users);
       });
     } catch { /* no bridge */ }

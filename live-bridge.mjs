@@ -365,7 +365,9 @@ function pushEvent(kind, extra) {
     else if (extra.phase === 'ended') console.log(`  [${t}] BATTLE ${String(extra.outcome || '').toUpperCase()} ${Object.entries(extra.scores || {}).map(([n, v]) => `${n} ${v}`).join(' vs ')}`);
     else if (extra.phase === 'over') console.log(`  [${t}] Punishment round finished`);
   } else if (kind === 'firstGift') {
-    console.log(`  [${t}] FIRST GIFT x${extra.multiplier ?? '?'} bonus in ${Math.max(0, Math.round((extra.startsAt - Date.now()) / 1000))}s`);
+    console.log(`  [${t}] FIRST GIFT x${extra.multiplier ?? '?'} bonus is on this match`);
+  } else if (kind === 'firstGiftHit') {
+    console.log(`  [${t}] FIRST GIFT x${extra.multiplier} landed: ${extra.nickname} (${extra.diamonds} diamonds)`);
   } else if (kind === 'boost') {
     console.log(`  [${t}] BOOST x${extra.multiplier ?? '?'} ${extra.phase}${extra.side && extra.side !== 'mine' ? ` (${extra.side})` : ''}`);
   } else if (kind === 'powerup') {
@@ -513,6 +515,57 @@ function handleUndecoded(method, payload) {
 
 const FIRST_GIFT_MS = Number(config.firstGiftSeconds || 55) * 1000;
 
+// TikTok doesn't send the First Gift bonus as data, so it's detected from the scores: in the first
+// ~55s of a match, if someone's battle score jumps by exactly 2x or 3x the diamonds they just sent,
+// the bonus is on at that multiplier. (Checked against three real matches: 30-diamond Doughnut -> 60
+// in two x2 matches, -> 90 in the x3 match; a Rose -> 2 in an x2 match; 30 -> 30 after the window.)
+let firstGiftTrack = null;
+const msgTime = (data) => { const c = Number(data?.common?.createTime); return c > 1e12 ? c : Date.now(); };
+
+function firstGiftNoteGift(data) {
+  const t = firstGiftTrack;
+  if (!t || !state.battle || state.battle.id !== t.battleId) return;
+  if (msgTime(data) - t.startMs > FIRST_GIFT_MS) return;
+  const uid = String(data.user?.userId ?? data.user?.id ?? '');
+  const dia = Number((data.gift || data.giftDetails || {}).diamondCount) || 0;
+  if (!uid || !dia || t.hits.has(uid)) return;
+  const key = `${uid}:${data.giftId}:${data.groupId ?? ''}`;
+  const repeat = Math.max(1, Number(data.repeatCount) || 1);
+  const inc = repeat - (t.lastRepeat[key] || 0);
+  if (inc <= 0) return;
+  t.lastRepeat[key] = repeat;
+  t.pending[uid] = (t.pending[uid] || 0) + inc * dia;
+}
+
+function firstGiftNoteScores(data, mySideUsers) {
+  const t = firstGiftTrack;
+  if (!t || !state.battle || state.battle.id !== t.battleId) return;
+  const inWindow = msgTime(data) - t.startMs <= FIRST_GIFT_MS + 3000;
+  for (const u of mySideUsers) {
+    const uid = String(u.userId ?? u.userIdStr ?? '');
+    const score = Number(u.score) || 0;
+    const prev = t.scores[uid] ?? 0;
+    t.scores[uid] = score;
+    const pending = t.pending[uid] || 0;
+    if (!inWindow || !pending || score <= prev) continue;
+    t.pending[uid] = 0;
+    const ratio = (score - prev) / pending;
+    const m = Math.round(ratio);
+    if ((m === 2 || m === 3) && Math.abs(ratio - m) < 0.2) {
+      t.hits.add(uid);
+      const nickname = u.nickname || u.nickName || 'Someone';
+      if (!state.firstGift || !state.firstGift.multiplier) {
+        state.firstGift = { battleId: t.battleId, multiplier: m, startsAt: t.startMs, endsAt: t.startMs + FIRST_GIFT_MS, detectedFrom: nickname };
+        pushEvent('firstGift', { multiplier: m, startsAt: t.startMs, endsAt: t.startMs + FIRST_GIFT_MS });
+      }
+      pushEvent('firstGiftHit', { nickname, multiplier: m, diamonds: pending });
+      stateDirty = true;
+    } else if (m === 1) {
+      t.hits.add(uid); // their first gift counted normally: no bonus for them
+    }
+  }
+}
+
 function clearBattleExtras(reason) {
   if (state.boost && state.boost.phase !== 'ended') boostEvent('ended', { reason });
   state.boost = null;
@@ -549,9 +602,9 @@ function handleBattle(data) {
     // Measured from two matches: TikTok's countdown ends ~55s after startTimeMs. The multiplier
     // isn't in the decoded message, so it stays null until we find it in the raw bytes.
     // Not every match has it, so this stays off until we find TikTok's signal in the raw bytes.
+    firstGiftTrack = { battleId: id, startMs, pending: {}, lastRepeat: {}, scores: {}, hits: new Set() };
+    state.firstGift = null;
     if (config.firstGiftAlways) state.firstGift = { battleId: id, multiplier: null, announcedAt: startMs, startsAt: startMs, endsAt: startMs + FIRST_GIFT_MS };
-    state.battle.iceSetting = Number(bs.iceShowdownSetting ?? -1);
-    console.log(`  First Gift code for this match: ${state.battle.iceSetting} (tell Claude if TikTok showed x2, x3 or nothing)`);
     pushEvent('battle', { phase: 'started', opponents: Object.values(hosts).filter((h) => sideOf(h.id) !== 'mine').map((h) => h.name) });
   } else if ((action === 5 || action === 6) && state.battle && state.battle.id === id) {
     if (action === 6) state.battle.endedEarly = true;
@@ -581,6 +634,7 @@ function handleArmies(data) {
     pushEvent('crit', { user: String(data.fromUserId || ''), nickname: name, diamonds: Number(data.totalDiamondCount) || 0 });
   }
   for (const [key, value] of entries(data.armies)) {
+    if (key === String(config.hostUserId)) firstGiftNoteScores(data, value?.userArmies || []);
     const h = state.battle.hosts[key] || (state.battle.hosts[key] = { id: key });
     h.score = Number(value?.hostscore ?? value?.hostScore) || 0;
     state.battle.supporters[key] = (value?.userArmies || []).slice(0, 3).map((u) => ({ id: String(u.userId || ''), name: u.nickname || u.nickName || '', score: Number(u.score) || 0 }));
@@ -713,6 +767,7 @@ function handleOther(type, data) {
 
 function handleGift(data) {
   // Current schema: data.gift { name, diamondCount, type, combo }. Older schema: data.giftDetails { giftName, giftType }.
+  firstGiftNoteGift(data);
   const d = data.gift || data.giftDetails || {};
   const giftType = Number(d.type ?? d.giftType ?? data.giftType);
   const streakable = giftType === 1 || d.combo === true;
