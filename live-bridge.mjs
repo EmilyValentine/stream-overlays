@@ -15,7 +15,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
-import { deserializeWebSocketMessage, deserializeMessage } from 'tiktok-live-connector';
+import { deserializeMessage, WebcastPushFrame } from 'tiktok-live-connector';
+import zlib from 'node:zlib';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const CONFIG_FILE = path.join(ROOT, 'config.json');
@@ -398,22 +399,78 @@ async function startCapture() {
 
   let lastSocketAt = 0;
 
+  const stats = { sockets: 0, frames: 0, decoded: 0, messages: 0, errors: 0, other: 0 };
+  let lastFrameAt = 0;
+  const shownErrors = new Set();
+
+  function unpack(payload, headers) {
+    const buf = Buffer.from(payload);
+    const compress = (headers || []).find((h) => /compress/i.test(h.key))?.value || '';
+    if (buf.length > 2 && buf[0] === 0x1f && buf[1] === 0x8b) return zlib.gunzipSync(buf);
+    if (/gzip/i.test(compress)) return zlib.gunzipSync(buf);
+    if (/br|brotli/i.test(compress)) return zlib.brotliDecompressSync(buf);
+    if (/deflate/i.test(compress)) return zlib.inflateSync(buf);
+    return buf;
+  }
+
+  function decodeFrame(raw) {
+    const frame = WebcastPushFrame.decode(raw);
+    const enc = String(frame.payloadEncoding || '');
+    const type = String(frame.payloadType || '');
+    if (!frame.payload || !frame.payload.length) return { kind: 'empty', type };
+    if (enc && enc !== 'pb') return { kind: 'encoding', enc, type };
+    if (type && !/msg/i.test(type)) return { kind: 'non-msg', type };
+    const body = unpack(frame.payload, frame.headers);
+    return { kind: 'msg', result: deserializeMessage('ProtoMessageFetchResult', body) };
+  }
+
+  function reportError(key, text) {
+    if (shownErrors.has(key) || shownErrors.size > 8) return;
+    shownErrors.add(key);
+    console.log(`  [debug] ${text}`);
+  }
+
   page.on('websocket', (ws) => {
-    if (!/webcast|im\/push|\/ws\//i.test(ws.url())) return;
+    const url = safeUrl(ws.url());
+    console.log(`  [debug] Socket opened: ${url}`);
+    if (!/webcast|im\/push|\/ws\//i.test(url)) return;
+    stats.sockets++;
     lastSocketAt = Date.now();
     setStatus('watching', 'Live connection opened, waiting for data');
-    ws.on('framereceived', async ({ payload }) => {
-      if (typeof payload === 'string') return;
+    ws.on('framereceived', ({ payload }) => {
+      lastFrameAt = Date.now();
+      if (typeof payload === 'string') { stats.other++; reportError('text', `Text frame (${payload.length} chars): ${payload.slice(0, 120)}`); return; }
+      stats.frames++;
       try {
-        const frame = await deserializeWebSocketMessage(Buffer.from(payload));
-        if (frame.protoMessageFetchResult) handleMessages(frame.protoMessageFetchResult.messages, 'websocket');
-      } catch { /* not a webcast frame */ }
+        const out = decodeFrame(Buffer.from(payload));
+        if (out.kind === 'msg') {
+          stats.decoded++;
+          const msgs = out.result.messages || [];
+          stats.messages += msgs.length;
+          const undecoded = msgs.filter((m) => !m.decodedData).map((m) => m.method);
+          if (undecoded.length) reportError('undecoded:' + undecoded[0], `Message types without a decoder: ${[...new Set(undecoded)].slice(0, 6).join(', ')}`);
+          handleMessages(msgs, 'websocket');
+        } else if (out.kind === 'encoding') {
+          reportError('enc:' + out.enc, `Frame payload encoding "${out.enc}" (type "${out.type}")`);
+        } else if (out.kind !== 'empty') {
+          reportError('kind:' + out.type, `Frame type "${out.type}" skipped`);
+        }
+      } catch (err) {
+        stats.errors++;
+        const head = Buffer.from(payload).subarray(0, 24).toString('hex');
+        reportError('err:' + String(err.message).slice(0, 40), `Decode failed (${payload.length} bytes, starts ${head}): ${String(err.message).slice(0, 160)}`);
+      }
     });
     ws.on('close', () => {
+      console.log(`  [debug] Socket closed: ${url}`);
       setStatus('watching', 'Live connection closed, waiting for it to reopen');
       lastSocketAt = 0;
     });
   });
+
+  setInterval(() => {
+    console.log(`  [stats] sockets ${stats.sockets} | frames ${stats.frames} | decoded ${stats.decoded} | messages ${stats.messages} | errors ${stats.errors} | text ${stats.other}`);
+  }, 30000);
 
   page.on('response', (response) => { sniffHttp(response).catch(() => {}); });
 
@@ -437,7 +494,7 @@ async function startCapture() {
   // If no live data arrives, reload the page now and then (covers starting the bridge before going live).
   setInterval(async () => {
     const quiet = !state.bridge.lastEventAt || Date.now() - new Date(state.bridge.lastEventAt).getTime() > 90000;
-    if (quiet && Date.now() - lastSocketAt > 90000 && !page.isClosed()) {
+    if (quiet && Date.now() - lastFrameAt > 90000 && !page.isClosed()) {
       setStatus('watching', 'No live data yet. Reloading the live page (are you live?)');
       await page.goto(liveUrl, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
     }
