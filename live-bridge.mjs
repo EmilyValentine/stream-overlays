@@ -376,6 +376,13 @@ function eulerKey() {
 
 async function startEuler(apiKey) {
   let attempt = 0;
+  const eulerLog = [];
+  const STATUS_FILE = path.join(ROOT, 'bridge-status.json');
+  setInterval(() => {
+    try {
+      fs.writeFileSync(STATUS_FILE, JSON.stringify({ at: new Date().toISOString(), mode: 'euler', bridge: state.bridge, points: state.points, session: state.session, lastGift: state.lastGift, messageTypes: state.messageTypes, rankCandidates: state.rankCandidates, rankHint: state.rankHint, debug: eulerLog }, null, 2));
+    } catch { /* ignore */ }
+  }, 10000);
   const connect = async () => {
     attempt++;
     const connection = new TikTokLiveConnection(config.username, { signApiKey: apiKey, enableExtendedGiftInfo: false });
@@ -387,7 +394,11 @@ async function startEuler(apiKey) {
       setStatus('watching', 'Disconnected from the live. Reconnecting in 30 seconds');
       setTimeout(connect, 30000);
     });
-    connection.on(ControlEvent.ERROR, (err) => console.log(`  [euler] ${String(err?.info || err?.message || err).slice(0, 200)}`));
+    connection.on(ControlEvent.ERROR, (err) => {
+      const t = String(err?.info || err?.message || err).slice(0, 200);
+      console.log(`  [euler] ${t}`);
+      eulerLog.push(`${new Date().toISOString()} ${t}`); if (eulerLog.length > 40) eulerLog.shift();
+    });
     try {
       setStatus('watching', `Connecting to @${config.username} via Euler Stream`);
       const st = await connection.connect();
