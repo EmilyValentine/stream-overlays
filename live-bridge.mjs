@@ -258,7 +258,7 @@ setInterval(() => { for (const res of clients) { try { res.write(': ping\n\n'); 
 // can be replayed later to test overlays: node live-bridge.mjs --replay sessions/<file> [--speed 2]
 
 let recorder = null;
-function recordMessage(type, data) {
+function recordMessage(type, data, raw) {
   if (!config.record || REPLAY_FILE) return;
   try {
     if (!recorder) {
@@ -267,7 +267,8 @@ function recordMessage(type, data) {
       const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-');
       recorder = fs.createWriteStream(path.join(dir, `${stamp}.jsonl`), { flags: 'a' });
     }
-    recorder.write(`{"t":${Date.now()},"type":"${type}","data":${toJson(data)}}\n`);
+    const rawPart = raw && raw.length ? `,"raw":"${Buffer.from(raw).toString('base64')}"` : '';
+    recorder.write(`{"t":${Date.now()},"type":"${type}","data":${toJson(data)}${rawPart}}\n`);
   } catch { /* recording is best-effort */ }
 }
 
@@ -318,7 +319,12 @@ function handleMessages(messages, source) {
     if (alreadySeen(id)) continue;
 
     state.messageTypes[type] = (state.messageTypes[type] || 0) + 1;
-    if (m.decodedData?.data && source !== 'replay') recordMessage(type, m.decodedData.data);
+    if (m.decodedData?.data && source !== 'replay') {
+      const d = m.decodedData.data;
+      const sparse = Object.keys(d).filter((k) => k !== 'common' && d[k] !== undefined && d[k] !== null && d[k] !== '' && !(Array.isArray(d[k]) && !d[k].length)).length === 0;
+      const keepRaw = sparse || /Banner|Rank|Activity|Campaign|Fest|Toast|Notice/i.test(type);
+      recordMessage(type, d, keepRaw ? m.payload : null);
+    }
     state.bridge.lastEventAt = new Date().toISOString();
     if (state.bridge.status !== 'connected') setStatus('connected', `Receiving live data (${source})`);
 
@@ -669,12 +675,27 @@ async function startEuler(apiKey) {
   const connect = async () => {
     attempt++;
     const connection = new TikTokLiveConnection(config.username, { signApiKey: apiKey, enableExtendedGiftInfo: false });
+    // Messages the decoder can't read are normally dropped. Record their raw bytes so they can be
+    // examined later (LIVE Fest / league data may arrive in formats the decoder doesn't know yet).
+    if (typeof connection.processProtoMessageFetchResult === 'function') {
+      const original = connection.processProtoMessageFetchResult;
+      connection.processProtoMessageFetchResult = async function (batch) {
+        for (const message of batch?.messages || []) {
+          if (!message.decodedData && message.payload) {
+            const method = String(message.method || 'UnknownMessage');
+            state.messageTypes[method] = (state.messageTypes[method] || 0) + 1;
+            recordMessage(method, { undecoded: true }, message.payload);
+          }
+        }
+        return original.call(this, batch);
+      };
+    }
     // The library emits (method, { type, data }, payload).
-    connection.on(ControlEvent.DECODED_DATA, (type, decoded) => {
+    connection.on(ControlEvent.DECODED_DATA, (type, decoded, payload) => {
       const data = decoded && typeof decoded === 'object' && 'data' in decoded ? decoded.data : decoded;
       const id = data?.common?.msgId ?? data?.msgId;
       wsStats.messages++;
-      handleMessages([{ method: type, msgId: id !== undefined && id !== null ? String(id) : null, decodedData: { type, data } }], 'euler');
+      handleMessages([{ method: type, msgId: id !== undefined && id !== null ? String(id) : null, payload, decodedData: { type, data } }], 'euler');
     });
     connection.on('websocketConnected', () => { wsStats.connects++; note('Live feed WebSocket connected'); });
     connection.on('websocketData', () => { wsStats.frames++; wsStats.lastFrameAt = new Date().toISOString(); });
