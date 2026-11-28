@@ -377,20 +377,28 @@ function eulerKey() {
 async function startEuler(apiKey) {
   let attempt = 0;
   const eulerLog = [];
+  const wsStats = { connects: 0, frames: 0, messages: 0, lastFrameAt: null };
+  const note = (t) => { console.log(`  [euler] ${t}`); eulerLog.push(`${new Date().toISOString()} ${t}`); if (eulerLog.length > 40) eulerLog.shift(); };
   const STATUS_FILE = path.join(ROOT, 'bridge-status.json');
   setInterval(() => {
     try {
-      fs.writeFileSync(STATUS_FILE, JSON.stringify({ at: new Date().toISOString(), mode: 'euler', bridge: state.bridge, points: state.points, session: state.session, lastGift: state.lastGift, messageTypes: state.messageTypes, rankCandidates: state.rankCandidates, rankHint: state.rankHint, debug: eulerLog }, null, 2));
+      fs.writeFileSync(STATUS_FILE, JSON.stringify({ at: new Date().toISOString(), mode: 'euler', ws: wsStats, bridge: state.bridge, points: state.points, session: state.session, lastGift: state.lastGift, messageTypes: state.messageTypes, rankCandidates: state.rankCandidates, rankHint: state.rankHint, debug: eulerLog }, null, 2));
     } catch { /* ignore */ }
   }, 10000);
   const connect = async () => {
     attempt++;
     const connection = new TikTokLiveConnection(config.username, { signApiKey: apiKey, enableExtendedGiftInfo: false });
-    connection.on(ControlEvent.DECODED_DATA, (type, event) => {
-      const id = event?.common?.msgId ?? event?.msgId;
-      handleMessages([{ method: type, msgId: id !== undefined ? String(id) : null, decodedData: { type, data: event } }], 'euler');
+    // The library emits (method, { type, data }, payload).
+    connection.on(ControlEvent.DECODED_DATA, (type, decoded) => {
+      const data = decoded && typeof decoded === 'object' && 'data' in decoded ? decoded.data : decoded;
+      const id = data?.common?.msgId ?? data?.msgId;
+      wsStats.messages++;
+      handleMessages([{ method: type, msgId: id !== undefined && id !== null ? String(id) : null, decodedData: { type, data } }], 'euler');
     });
-    connection.on(ControlEvent.DISCONNECTED, () => {
+    connection.on('websocketConnected', () => { wsStats.connects++; note('Live feed WebSocket connected'); });
+    connection.on('websocketData', () => { wsStats.frames++; wsStats.lastFrameAt = new Date().toISOString(); });
+    connection.on(ControlEvent.DISCONNECTED, (info) => {
+      note(`Disconnected ${info?.code ?? ''} ${info?.reason ?? ''}`);
       setStatus('watching', 'Disconnected from the live. Reconnecting in 30 seconds');
       setTimeout(connect, 30000);
     });
@@ -404,7 +412,7 @@ async function startEuler(apiKey) {
       const st = await connection.connect();
       attempt = 0;
       state.bridge.room = String(st.roomId || '');
-      setStatus('watching', `Connected to room ${state.bridge.room}, waiting for data`);
+      setStatus(state.bridge.lastEventAt ? 'connected' : 'watching', `Connected to room ${state.bridge.room}`);
     } catch (err) {
       const msg = String(err?.message || err);
       if (/Business plan|requires a .*plan|Premium/i.test(msg)) {
