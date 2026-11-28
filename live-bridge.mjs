@@ -94,6 +94,7 @@ function recalc() {
   state.points.multiplier = Number(config.multiplier) || 2;
   state.points.total = state.points.start + state.points.session;
   state.topGifters = [...gifters.values()].sort((a, b) => b.coins - a.coins).slice(0, 5);
+  state.hostUserId = config.hostUserId || null;
   const ls = config.leagueSync;
   if (ls) {
     const earned = Math.max(0, state.session.coins - (Number(ls.baselineCoins) || 0));
@@ -357,6 +358,22 @@ function who(user) {
 
 function pushEvent(kind, extra) {
   const ev = { kind, at: new Date().toISOString(), ...extra };
+  const t = new Date().toLocaleTimeString();
+  if (kind === 'battle') {
+    if (extra.phase === 'started') console.log(`  [${t}] BATTLE started vs ${(extra.opponents || []).join(', ') || 'opponent'}`);
+    else if (extra.phase === 'ended') console.log(`  [${t}] BATTLE ${String(extra.outcome || '').toUpperCase()} ${Object.entries(extra.scores || {}).map(([n, v]) => `${n} ${v}`).join(' vs ')}`);
+    else if (extra.phase === 'over') console.log(`  [${t}] Punishment round finished`);
+  } else if (kind === 'boost') {
+    console.log(`  [${t}] BOOST x${extra.multiplier ?? '?'} ${extra.phase}${extra.side && extra.side !== 'mine' ? ` (${extra.side})` : ''}`);
+  } else if (kind === 'powerup') {
+    console.log(`  [${t}] POWER-UP ${extra.name}${extra.multiple ? ' x' + extra.multiple : ''} by ${extra.by}${extra.side === 'opponent' ? ' (THEIRS)' : ''}`);
+  } else if (kind === 'powerupAwarded') {
+    console.log(`  [${t}] POWER-UP earned by ${(extra.users || []).join(', ')}`);
+  } else if (kind === 'crit') {
+    console.log(`  [${t}] CRITICAL HIT${extra.nickname ? ' by ' + extra.nickname : ''}`);
+  } else if (kind === 'follow' || kind === 'share') {
+    console.log(`  [${t}] ${kind.toUpperCase()}: ${extra.nickname}`);
+  }
   state.recentEvents.unshift(ev);
   if (state.recentEvents.length > 30) state.recentEvents.pop();
   broadcast('event', ev);

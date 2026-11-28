@@ -76,6 +76,15 @@
     </section>
 
     <section class="card">
+      <h2>Battle</h2>
+      <div class="big" id="btScore">No battle yet</div>
+      <div class="muted" id="btLine"></div>
+      <div class="hint" id="btBoost"></div>
+      <div class="hint" id="btPower"></div>
+      <div class="hint" id="btSupp"></div>
+    </section>
+
+    <section class="card">
       <h2>League</h2>
       <div class="big" id="lgTier">–</div>
       <div class="muted" id="lgFrag"></div>
@@ -178,7 +187,7 @@
     $('rankCands').innerHTML = rc.length
       ? '<b>Rank data seen in TikTok\'s page (newest first):</b>' + rc.slice(0, 6).map((c) => `<div class="row"><span>#${fmt(c.rank)} · ${escapeHtml(c.scoreKey)} ${fmt(c.score)}${c.isMe ? ' · <b style="color:#3ddc84">looks like yours</b>' : ''}</span><span class="muted" style="font-size:12px">${escapeHtml(c.url.replace(/^https?:\/\/[^/]+/, ''))}</span></div>`).join('')
       : '';
-    lastState = s; renderLeague(s);
+    lastState = s; renderLeague(s); renderBattle(s);
     $('rankHint').textContent = s.rankHint ? `Possible rank info spotted in ${s.rankHint.type}: "${s.rankHint.text}"` : '';
   }
 
@@ -192,6 +201,25 @@
     const hms = left === null ? '' : ` · next update ${String(Math.floor(left / 3.6e6)).padStart(2, '0')}:${String(Math.floor(left / 6e4) % 60).padStart(2, '0')}:${String(Math.floor(left / 1000) % 60).padStart(2, '0')}`;
     $('lgLine').textContent = (L.reached ? 'Fragment reached! Sync to update' : `${fmt(L.toNext)} diamonds to next fragment`) + (L.rank ? ` · rank ${L.rank}` : '') + hms;
   }
+  function renderBattle(s) {
+    const b = s.battle;
+    if (!b) return;
+    const hosts = Object.values(b.hosts || {});
+    const mine = hosts.find((h) => String(h.id) === String(s.hostUserId)) || hosts.find((h) => /cuddle/i.test(h.name || ''));
+    const them = hosts.find((h) => h !== mine);
+    $('btScore').textContent = mine && them ? `${fmt(mine.score)} – ${fmt(them.score)}` : hosts.map((h) => fmt(h.score)).join(' – ');
+    const left = b.endsAt ? Math.max(0, b.endsAt - Date.now()) : null;
+    const phase = b.phase === 'live' ? (left !== null ? `LIVE · ${Math.floor(left / 60000)}:${String(Math.floor(left / 1000) % 60).padStart(2, '0')} left` : 'LIVE') : b.phase === 'punishment' ? `${(b.outcome || '').toUpperCase()} · punishment round` : (b.outcome ? b.outcome.toUpperCase() : b.phase);
+    $('btLine').textContent = `vs ${them ? them.name : '?'}${them && them.league ? ' (' + them.league + ')' : ''} · ${phase}`;
+    const bo = s.boost;
+    $('btBoost').textContent = bo ? `Boost: x${bo.multiplier ?? '?'} ${bo.phase}${bo.side === 'opponent' ? ' (theirs)' : ''}${bo.phase === 'active' && bo.endsAt ? ' · ' + Math.max(0, Math.round((bo.endsAt - Date.now()) / 1000)) + 's left' : ''}` : '';
+    const pw = (s.powerups || []);
+    $('btPower').textContent = pw.length ? 'Power-ups: ' + pw.map((p) => `${p.name}${p.multiple ? ' x' + p.multiple : ''} by ${p.by}${p.side === 'opponent' ? ' (theirs)' : ''}`).join(' · ') : '';
+    const sup = mine ? (b.supporters || {})[mine.id] || [] : [];
+    $('btSupp').textContent = sup.length ? 'Your MVPs: ' + sup.map((u) => `${u.name} (${u.score})`).join(', ') : '';
+  }
+  setInterval(() => { if (lastState) renderBattle(lastState); }, 1000);
+
   let lastState = null;
   setInterval(() => { if (lastState) renderLeague(lastState); }, 1000);
 
