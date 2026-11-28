@@ -524,7 +524,7 @@ function handleArmies(data) {
 // LinkMicBattleItemCard carries a use<Name>Card object with cardInfo (who sent it, when it starts,
 // how long it lasts, multiplier and crit chance) and toAnchorId (the creator it helps).
 
-const CARD_NAMES = { pm_mt_boost_crit_name: 'Crit Glove' };
+const CARD_NAMES = { pm_mt_boost_crit_name: 'Boosting Glove' };
 
 function cardLabel(key, pattern) {
   if (CARD_NAMES[key]) return CARD_NAMES[key];
@@ -556,6 +556,7 @@ function handleItemCard(data) {
       critHigh: Number(v.criticalStrikeRateHigh) || null,
       side: sideOf(target),
       by: user.nickName || user.nickname || user.displayId || 'Someone',
+      image: (info.cardImage?.urlList || info.cardImage?.url_list || [])[0] || null,
       startsAt, endsAt: duration ? startsAt + duration * 1000 : null
     };
     state.powerups = state.powerups.filter((x) => x.id !== p.id).concat(p);
