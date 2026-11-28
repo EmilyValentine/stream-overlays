@@ -15,7 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
-import { deserializeMessage, WebcastPushFrame } from 'tiktok-live-connector';
+import { deserializeMessage, WebcastPushFrame, TikTokLiveConnection, ControlEvent } from 'tiktok-live-connector';
 import zlib from 'node:zlib';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -33,6 +33,7 @@ const DEFAULT_CONFIG = {
   rank: null,
   multiplier: 2,
   festGifts: ['LIVE FEST 26', 'FEST Explorer', 'FEST Energy', 'FEST Showtime!', 'FEST World'],
+  eulerApiKey: '',
   blockVideo: true,
   logRawMessages: true
 };
@@ -108,7 +109,7 @@ const TYPES = {
   '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8', '.txt': 'text/plain; charset=utf-8',
   '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.gif': 'image/gif'
 };
-const PRIVATE_FILES = new Set(['config.json', 'bridge-log.jsonl', 'bridge-status.json', 'tiktool-key.txt', 'probe-log.jsonl']);
+const PRIVATE_FILES = new Set(['euler-key.txt', 'config.json', 'bridge-log.jsonl', 'bridge-status.json', 'tiktool-key.txt', 'probe-log.jsonl']);
 
 function cors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -364,6 +365,49 @@ async function sniffHttp(response) {
   }
 }
 
+// ---------------------------------------------------------------- Euler Stream mode
+// When an Euler Stream API key is set (config.json "eulerApiKey", or euler-key.txt), the bridge
+// connects with tiktok-live-connector instead of opening a Chrome window.
+
+function eulerKey() {
+  if (config.eulerApiKey) return String(config.eulerApiKey).trim();
+  try { return fs.readFileSync(path.join(ROOT, 'euler-key.txt'), 'utf8').trim(); } catch { return ''; }
+}
+
+async function startEuler(apiKey) {
+  let attempt = 0;
+  const connect = async () => {
+    attempt++;
+    const connection = new TikTokLiveConnection(config.username, { signApiKey: apiKey, enableExtendedGiftInfo: false });
+    connection.on(ControlEvent.DECODED_DATA, (type, event) => {
+      const id = event?.common?.msgId ?? event?.msgId;
+      handleMessages([{ method: type, msgId: id !== undefined ? String(id) : null, decodedData: { type, data: event } }], 'euler');
+    });
+    connection.on(ControlEvent.DISCONNECTED, () => {
+      setStatus('watching', 'Disconnected from the live. Reconnecting in 30 seconds');
+      setTimeout(connect, 30000);
+    });
+    connection.on(ControlEvent.ERROR, (err) => console.log(`  [euler] ${String(err?.info || err?.message || err).slice(0, 200)}`));
+    try {
+      setStatus('watching', `Connecting to @${config.username} via Euler Stream`);
+      const st = await connection.connect();
+      attempt = 0;
+      state.bridge.room = String(st.roomId || '');
+      setStatus('watching', `Connected to room ${state.bridge.room}, waiting for data`);
+    } catch (err) {
+      const msg = String(err?.message || err);
+      if (/Business plan|requires a .*plan|Premium/i.test(msg)) {
+        setStatus('error', 'Euler says this needs a paid plan. The free key is not enough for signing.');
+        return;
+      }
+      if (/offline|not live|UserOffline/i.test(msg)) setStatus('watching', 'You are not live yet. Trying again in 60 seconds');
+      else setStatus('error', `Euler connect failed: ${msg.slice(0, 160)}. Retrying in 60 seconds`);
+      setTimeout(connect, Math.min(300000, 60000 * attempt));
+    }
+  };
+  await connect();
+}
+
 // ---------------------------------------------------------------- browser capture
 
 async function launchBrowser() {
@@ -525,7 +569,9 @@ server.listen(config.port, '127.0.0.1', async () => {
     return;
   }
   try {
-    await startCapture();
+    const key = eulerKey();
+    if (key) await startEuler(key);
+    else await startCapture();
   } catch (err) {
     setStatus('error', err.message);
   }

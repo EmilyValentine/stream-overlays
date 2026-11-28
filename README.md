@@ -62,6 +62,11 @@ Requires Node.js 22+ and Google Chrome (or Microsoft Edge).
 3. Open `http://localhost:3000/control`, enter your points, points needed and rank from the LIVE Fest screen, and click **Sync to banner**.
 4. In TikTok LIVE Studio use `http://localhost:3000/livefest-banner.html` as the Link source (1080 × 380).
 
+**Euler Stream mode (recommended if the Chrome window gets no data):** create a free Community account at
+https://www.eulerstream.com, copy your API key into a file called `euler-key.txt` in this folder (or the
+`eulerApiKey` field in `config.json`), and restart `start-live.bat`. With a key set, the bridge connects through
+Euler instead of opening Chrome. The key file is ignored by git.
+
 Points are counted as FEST gifts × 2 per coin and other gifts × 1 per coin, added to the synced total.
 Votes are not included, so sync from the app now and then. Messages that might contain rank information
 are saved to `bridge-log.jsonl`, and the control page flags any it spots.
