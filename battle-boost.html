@@ -110,7 +110,7 @@
       $('bsub').textContent = 'GIFTS COUNT DOUBLE'.replace('DOUBLE', b.multiplier === 3 ? 'TRIPLE' : 'DOUBLE');
       $('bfill').style.width = b.endsAt && b.startsAt ? Math.max(0, Math.min(100, (b.endsAt - now) / (b.endsAt - b.startsAt) * 100)) + '%' : '100%';
     } else if (b.phase === 'scheduled') {
-      $('bk').textContent = 'BOOST UNLOCKED' + side;
+      $('bk').textContent = 'BOOST STARTING SOON' + side;
       $('bmain').textContent = b.startsAt ? `in ${mmss(b.startsAt - now)}` : 'SOON';
       $('bsub').textContent = b.durationSec ? `FOR ${b.durationSec}s` : '';
       $('bfill').style.width = '100%';

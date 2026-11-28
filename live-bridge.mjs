@@ -414,14 +414,16 @@ function handleBattleTask(data) {
     };
     const multiplier = Number(cfg.rewardMultiple) || elem('multi') || null;
     const durationSec = Number(cfg.duration) || elem('dur') || null;
+    // The real boost window is announced up front; the later settle message often says 0.
+    const plannedStart = toMs(cfg.rewardStartTimestamp) || null;
     state.boost = { battleId, side, sideVerified: false };
-    boostEvent('challenge', { multiplier, durationSec, progress: 0 });
+    boostEvent('challenge', { multiplier, durationSec, progress: 0, plannedStart });
   } else if (kind === 1 && state.boost && state.boost.battleId === battleId) {
     boostEvent('progress', { progress: Number(data.taskUpdate?.progress) || 0 });
   } else if (kind === 2 && state.boost && state.boost.battleId === battleId) {
     const result = Number(data.taskSettle?.result);
     if (result === 1) { boostEvent('failed'); return; }
-    const startsAt = toMs(data.taskSettle?.rewardStartTimestamp) || toMs(data.taskSettle?.rewardStartTime) || Date.now();
+    const startsAt = toMs(data.taskSettle?.rewardStartTimestamp) || state.boost.plannedStart || Date.now();
     const endsAt = startsAt + (Number(state.boost.durationSec) || 0) * 1000;
     boostEvent(Date.now() >= startsAt ? 'active' : 'scheduled', { startsAt, endsAt, bothSucceeded: result === 2 });
   } else if (kind === 3 && state.boost && state.boost.battleId === battleId && state.boost.phase !== 'ended') {
