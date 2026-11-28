@@ -28,7 +28,7 @@
     box-shadow:0 0 0 1.5px rgba(255,95,162,.45),0 0 12px rgba(255,45,122,.22);
     opacity:0;transform:translateY(-12px) scale(.97);transition:opacity .35s,transform .35s}
   .boost.show{opacity:1;transform:none}
-  .mult{position:absolute;left:10px;top:9px;width:100px;height:100px;border-radius:50%;display:grid;place-items:center;
+  .mult{position:absolute;white-space:nowrap;left:10px;top:9px;width:100px;height:100px;border-radius:50%;display:grid;place-items:center;
     background:radial-gradient(circle at 35% 30%,#e8559a,#c41f63 50%,#6e0c3c 100%);
     box-shadow:0 0 0 4px #1a0630,0 0 0 6px rgba(255,95,162,.55);font:900 44px/1 Outfit,sans-serif;color:var(--blush)}
   .boost.active .mult{animation:pulse 1.2s ease-in-out infinite}
@@ -106,12 +106,12 @@
     // The boost takes priority; otherwise the First Gift bonus uses the same pill.
     if (!visible && fgLive) {
       el.classList.add('show', 'active'); el.classList.remove('failed');
-      $('mult').textContent = fg.multiplier ? `×${fg.multiplier}` : '×2';
+      $('mult').textContent = fg.multiplier ? `×${fg.multiplier}` : '1st';
       $('bk').textContent = 'FIRST GIFT BONUS';
-      $('bmain').textContent = fg.startsAt > now ? mmss(fg.startsAt - now) : 'NOW';
-      $('bsub').textContent = `EVERYONE'S FIRST GIFT ×${fg.multiplier || 2}`;
-      const span = (fg.startsAt - (fg.announcedAt || fg.startsAt - 10000)) || 10000;
-      $('bfill').style.width = fg.startsAt > now ? Math.max(0, Math.min(100, (fg.startsAt - now) / span * 100)) + '%' : '100%';
+      $('bmain').textContent = mmss(fg.endsAt - now);
+      $('bsub').textContent = fg.multiplier ? `EVERYONE'S FIRST GIFT ×${fg.multiplier}` : `EVERYONE'S FIRST GIFT COUNTS EXTRA`;
+      const span = (fg.endsAt - fg.startsAt) || 55000;
+      $('bfill').style.width = Math.max(0, Math.min(100, (fg.endsAt - now) / span * 100)) + '%';
       return;
     }
     el.classList.toggle('show', Boolean(visible));
@@ -173,8 +173,8 @@
   }
 
   if (q.get('demo') === 'firstgift') {
-    const go = () => { const n = Date.now(); firstGift = { multiplier: 2, announcedAt: n, startsAt: n + 10000, endsAt: n + 15000 }; };
-    go(); setInterval(go, 18000);
+    const go = () => { const n = Date.now(); firstGift = { multiplier: null, startsAt: n, endsAt: n + 55000 }; };
+    go(); setInterval(go, 58000);
   }
   if (q.get('demo') === '1') {
     const now = Date.now();

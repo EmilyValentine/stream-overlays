@@ -489,9 +489,9 @@ function readProto(buf) {
   return out;
 }
 
-// WebcastBattleGameplayMessage = TikTok's "First Gift xN gifting points" bonus: each viewer's first gift in the window counts xN.
-// Seen layout: 2 = battleId, 5 = { 1: multiplier, 2: window start ms, 3: window end ms }.
-// TikTok shows its countdown from when the message arrives until the window starts.
+// WebcastBattleGameplayMessage arrives ~60s into a match announcing a 5s window ~10s later.
+// Seen layout: 2 = battleId, 5 = { 1: value (2 so far), 2: window start ms, 3: window end ms }.
+// Meaning not confirmed yet, so it is logged and kept in state.gameplay but not shown on screen.
 function handleGameplay(payload) {
   try {
     const m = readProto(Buffer.from(payload));
@@ -501,8 +501,8 @@ function handleGameplay(payload) {
     const startsAt = Number(w[2]?.[0] ?? 0) || null;
     const endsAt = Number(w[3]?.[0] ?? 0) || null;
     if (!startsAt) return;
-    state.firstGift = { battleId, multiplier, announcedAt: Date.now(), startsAt, endsAt, type: Number(m[3]?.[0] ?? 0) };
-    pushEvent('firstGift', { multiplier, startsAt, endsAt });
+    state.gameplay = { battleId, value: multiplier, announcedAt: Date.now(), startsAt, endsAt, type: Number(m[3]?.[0] ?? 0) };
+    console.log(`  [${new Date().toLocaleTimeString()}] MATCH GAMEPLAY event (value ${multiplier}) in ${Math.max(0, Math.round((startsAt - Date.now()) / 1000))}s`);
     stateDirty = true;
   } catch (e) { console.log('  Could not read BattleGameplayMessage: ' + e.message); }
 }
@@ -510,6 +510,8 @@ function handleGameplay(payload) {
 function handleUndecoded(method, payload) {
   if (method === 'WebcastBattleGameplayMessage') handleGameplay(payload);
 }
+
+const FIRST_GIFT_MS = Number(config.firstGiftSeconds || 55) * 1000;
 
 function clearBattleExtras(reason) {
   if (state.boost && state.boost.phase !== 'ended') boostEvent('ended', { reason });
@@ -543,6 +545,10 @@ function handleBattle(data) {
     state.battle = { id, phase: 'live', startedAt: new Date(startMs).toISOString(), endsAt: durationSec ? startMs + durationSec * 1000 : null, durationSec, hosts, supporters: {}, winner: null };
     const me = hosts[config.hostUserId];
     if (me?.league) state.league = me.league;
+    // First Gift bonus: every match opens with each viewer's first gift counting x2 or x3.
+    // Measured from two matches: TikTok's countdown ends ~55s after startTimeMs. The multiplier
+    // isn't in the decoded message, so it stays null until we find it in the raw bytes.
+    state.firstGift = { battleId: id, multiplier: null, announcedAt: startMs, startsAt: startMs, endsAt: startMs + FIRST_GIFT_MS };
     pushEvent('battle', { phase: 'started', opponents: Object.values(hosts).filter((h) => sideOf(h.id) !== 'mine').map((h) => h.name) });
   } else if ((action === 5 || action === 6) && state.battle && state.battle.id === id) {
     if (action === 6) state.battle.endedEarly = true;
