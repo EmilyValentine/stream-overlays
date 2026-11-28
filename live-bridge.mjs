@@ -539,35 +539,35 @@ function firstGiftNoteGift(data) {
   const inc = repeat - (t.lastRepeat[key] || 0);
   if (inc <= 0) return;
   t.lastRepeat[key] = repeat;
+  t.names[uid] = data.user?.nickname || data.user?.nickName || data.user?.displayId || t.names[uid];
   t.pending[uid] = (t.pending[uid] || 0) + inc * dia;
 }
 
-function firstGiftNoteScores(data, mySideUsers) {
+function firstGiftNoteScores(data, myArmy) {
+  // Uses your total battle score: each LinkMicArmies update says who triggered it (fromUserId),
+  // and TikTok often leaves the per-viewer list empty, so the host score is the reliable number.
   const t = firstGiftTrack;
   if (!t || !state.battle || state.battle.id !== t.battleId) return;
-  const inWindow = msgTime(data) - t.startMs <= FIRST_GIFT_MS + 3000;
-  for (const u of mySideUsers) {
-    const uid = String(u.userId ?? u.userIdStr ?? '');
-    const score = Number(u.score) || 0;
-    const prev = t.scores[uid] ?? 0;
-    t.scores[uid] = score;
-    const pending = t.pending[uid] || 0;
-    if (!inWindow || !pending || score <= prev) continue;
-    t.pending[uid] = 0;
-    const ratio = (score - prev) / pending;
-    const m = Math.round(ratio);
-    if ((m === 2 || m === 3) && Math.abs(ratio - m) < 0.2) {
-      t.hits.add(uid);
-      const nickname = u.nickname || u.nickName || 'Someone';
-      if (!state.firstGift || !state.firstGift.multiplier) {
-        state.firstGift = { battleId: t.battleId, multiplier: m, startsAt: t.startMs, endsAt: t.startMs + FIRST_GIFT_MS, detectedFrom: nickname };
-        pushEvent('firstGift', { multiplier: m, startsAt: t.startMs, endsAt: t.startMs + FIRST_GIFT_MS });
-      }
-      pushEvent('firstGiftHit', { nickname, multiplier: m, diamonds: pending });
-      stateDirty = true;
-    } else if (m === 1) {
-      t.hits.add(uid); // their first gift counted normally: no bonus for them
+  const score = Number(myArmy?.hostscore ?? myArmy?.hostScore) || 0;
+  const prev = t.hostPrev ?? 0;
+  t.hostPrev = score;
+  const uid = String(data.fromUserId ?? '');
+  const pending = t.pending[uid] || 0;
+  if (!uid || !pending || t.hits.has(uid) || score <= prev) return;
+  if (msgTime(data) - t.startMs > FIRST_GIFT_MS + 3000) return;
+  t.pending[uid] = 0;
+  const ratio = (score - prev) / pending;
+  const m = Math.round(ratio);
+  t.hits.add(uid);
+  if ((m === 2 || m === 3) && Math.abs(ratio - m) < 0.2) {
+    const u = (myArmy?.userArmies || []).find((x) => String(x.userId ?? x.userIdStr) === uid);
+    const nickname = u?.nickname || u?.nickName || t.names[uid] || 'Someone';
+    if (!state.firstGift || !state.firstGift.multiplier) {
+      state.firstGift = { battleId: t.battleId, multiplier: m, startsAt: t.startMs, endsAt: t.startMs + FIRST_GIFT_MS, detectedFrom: nickname };
+      pushEvent('firstGift', { multiplier: m, startsAt: t.startMs, endsAt: t.startMs + FIRST_GIFT_MS });
     }
+    pushEvent('firstGiftHit', { nickname, multiplier: m, diamonds: pending });
+    stateDirty = true;
   }
 }
 
@@ -607,7 +607,7 @@ function handleBattle(data) {
     // Measured from two matches: TikTok's countdown ends ~55s after startTimeMs. The multiplier
     // isn't in the decoded message, so it stays null until we find it in the raw bytes.
     // Not every match has it, so this stays off until we find TikTok's signal in the raw bytes.
-    firstGiftTrack = { battleId: id, startMs, pending: {}, lastRepeat: {}, scores: {}, hits: new Set() };
+    firstGiftTrack = { battleId: id, startMs, pending: {}, lastRepeat: {}, names: {}, hits: new Set(), hostPrev: 0 };
     state.firstGift = null;
     if (config.firstGiftAlways) state.firstGift = { battleId: id, multiplier: null, announcedAt: startMs, startsAt: startMs, endsAt: startMs + FIRST_GIFT_MS };
     pushEvent('battle', { phase: 'started', opponents: Object.values(hosts).filter((h) => sideOf(h.id) !== 'mine').map((h) => h.name) });
@@ -639,7 +639,7 @@ function handleArmies(data) {
     pushEvent('crit', { user: String(data.fromUserId || ''), nickname: name, diamonds: Number(data.totalDiamondCount) || 0 });
   }
   for (const [key, value] of entries(data.armies)) {
-    if (key === String(config.hostUserId)) firstGiftNoteScores(data, value?.userArmies || []);
+    if (key === String(config.hostUserId)) firstGiftNoteScores(data, value);
     const h = state.battle.hosts[key] || (state.battle.hosts[key] = { id: key });
     h.score = Number(value?.hostscore ?? value?.hostScore) || 0;
     state.battle.supporters[key] = (value?.userArmies || []).slice(0, 3).map((u) => ({ id: String(u.userId || ''), name: u.nickname || u.nickName || '', score: Number(u.score) || 0 }));
