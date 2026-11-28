@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>League Progress Pill</title>
+<!--
+  League progress pill — stream overlay
+  Browser / Link source size: 760 x 200 (scales to any size). Transparent background.
+
+  Live data: reads league tier, fragments, diamonds to next fragment and the update countdown
+  from live-bridge.mjs (sync them on the control page). Without the bridge, set them in the link:
+    tier     League tier, e.g. C3
+    frags    Fragments filled, e.g. 1
+    total    Fragments per level (default 3)
+    tonext   Diamonds to next fragment, e.g. 3500
+    bg       transparent | green | dark
+    live=0   Ignore the bridge
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600;700&family=Outfit:wght@600;800;900&display=swap" rel="stylesheet">
+<style>
+  :root{--pink:#ff2d7a;--violet:#8b5cff;--cyan:#22f0ff;--blush:#f6e6f0;--muted:#e877ad;--gold:#f2c46d}
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:100%;height:100%;background:transparent;overflow:hidden}
+  body.bg-green{background:#00b140} body.bg-dark{background:#0b0614}
+  #stage{position:absolute;left:0;top:0;width:760px;height:200px;transform-origin:0 0}
+
+  .tags{position:absolute;left:150px;top:18px;display:flex;gap:8px}
+  .tag{font:800 15px/1 Outfit,sans-serif;letter-spacing:.08em;color:var(--blush);padding:6px 11px;border-radius:8px}
+  .tag.main{background:linear-gradient(90deg,#c41f63,var(--violet))}
+  .tag.soft{background:rgba(26,6,48,.85);border:1px solid rgba(255,255,255,.14);color:#e9dcf2}
+  .tag:empty{display:none}
+
+  .pill{position:absolute;left:62px;top:52px;width:676px;height:118px;border-radius:60px;
+    background:linear-gradient(100deg,#2a0a3d 0%,#1a0630 55%,#10082a 100%);
+    box-shadow:0 0 0 1.5px rgba(255,95,162,.45),0 0 12px rgba(255,45,122,.22),inset 0 1px 0 rgba(255,255,255,.06)}
+
+  .badge{position:absolute;left:14px;top:38px;width:150px;height:150px;border-radius:50%;
+    background:radial-gradient(circle at 35% 30%,#8f6bff,#5b34c9 50%,#2a1468 100%);
+    box-shadow:0 0 0 5px #1a0630,0 0 0 7px rgba(139,92,255,.55),0 0 12px rgba(139,92,255,.3);display:grid;place-items:center;z-index:2}
+  .tier{font:900 58px/1 Outfit,sans-serif;color:var(--blush);letter-spacing:-.02em;text-shadow:0 2px 2px rgba(0,0,0,.35)}
+  .tier small{display:block;text-align:center;font:800 13px/1 Outfit,sans-serif;letter-spacing:.24em;color:#d9c8ff;margin-top:6px}
+
+  .body{position:absolute;left:184px;top:66px;right:46px}
+  .kicker{display:flex;align-items:center;gap:12px;font:800 17px/1 Outfit,sans-serif;letter-spacing:.26em;color:var(--muted)}
+  .frags{display:flex;gap:6px}
+  .frag{width:18px;height:20px}
+  .frag path{fill:rgba(255,255,255,.12);stroke:rgba(255,255,255,.28);stroke-width:1.5}
+  .frag.on path{fill:#e8559a;stroke:#ffb3d4}
+  .frag.new path{animation:fill 1.2s ease}
+  @keyframes fill{0%{transform:scale(.6);opacity:.3}60%{transform:scale(1.25)}100%{transform:none;opacity:1}}
+  .line{margin-top:8px;display:flex;align-items:baseline;gap:12px;white-space:nowrap}
+  .num{font:700 50px/1 Fredoka,sans-serif;color:var(--blush);text-shadow:0 2px 2px rgba(0,0,0,.35)}
+  .unit{font:800 22px/1 Outfit,sans-serif;color:var(--muted)}
+  .done .num{color:var(--gold)}
+  .bar{position:absolute;left:184px;right:46px;top:146px;height:8px;border-radius:99px;background:rgba(255,255,255,.14);overflow:hidden}
+  .fill{height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,#c41f63,var(--violet));transition:width 1.2s cubic-bezier(.2,.8,.2,1)}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="tags"><span class="tag main">LEAGUE</span><span class="tag soft" id="rankTag"></span><span class="tag soft" id="timeTag"></span></div>
+  <div class="pill"></div>
+  <div class="badge"><div class="tier"><span id="tier">–</span><small>TIER</small></div></div>
+  <div class="body" id="body">
+    <div class="kicker"><span id="kicker">NEXT FRAGMENT</span><span class="frags" id="frags"></span></div>
+    <div class="line"><span class="num" id="num">–</span><span class="unit" id="unit">DIAMONDS TO GO</span></div>
+  </div>
+  <div class="bar"><div class="fill" id="fill"></div></div>
+</div>
+<script>
+(() => {
+  const q = new URLSearchParams(location.search);
+  if (q.get('bg') === 'green') document.body.classList.add('bg-green');
+  if (q.get('bg') === 'dark') document.body.classList.add('bg-dark');
+  const stage = document.getElementById('stage');
+  const fit = () => { const s = Math.min(innerWidth / 760, innerHeight / 200); stage.style.transform = `translate(${(innerWidth - 760 * s) / 2}px,${(innerHeight - 200 * s) / 2}px) scale(${s})`; };
+  addEventListener('resize', fit); fit();
+  const $ = (id) => document.getElementById(id);
+  const fmt = (n) => Math.max(0, Math.round(n)).toLocaleString('en-US');
+  const shield = '<svg class="frag" viewBox="0 0 18 20"><path d="M9 1 L16.5 4 V10 C16.5 14.5 13 17.5 9 19 C5 17.5 1.5 14.5 1.5 10 V4 Z"/></svg>';
+
+  let startToNext = null, shownToNext = null, lastFrags = null, nextUpdateAt = null;
+
+  function render(L) {
+    if (!L) return;
+    $('tier').textContent = L.tier || '–';
+    $('rankTag').textContent = L.rank ? `RANK ${L.rank}` : '';
+    nextUpdateAt = L.nextUpdateAt ? new Date(L.nextUpdateAt).getTime() : null;
+    const total = Math.max(1, Number(L.fragmentsTotal) || 3), have = Math.min(total, Number(L.fragments) || 0);
+    const frags = $('frags');
+    frags.innerHTML = Array.from({ length: total }, (_, i) => shield).join('');
+    [...frags.children].forEach((el, i) => { if (i < have) el.classList.add('on'); if (lastFrags !== null && i === have - 1 && have > lastFrags) el.classList.add('new'); });
+    lastFrags = have;
+    if (L.toNext === undefined || L.toNext === null) { $('num').textContent = '–'; return; }
+    const toNext = Number(L.toNext) || 0;
+    if (startToNext === null || toNext > startToNext) startToNext = toNext;
+    const done = Boolean(L.reached) || toNext === 0;
+    $('body').classList.toggle('done', done);
+    $('kicker').textContent = done ? 'FRAGMENT EARNED' : 'NEXT FRAGMENT';
+    $('unit').textContent = done ? 'NICE' : 'DIAMONDS TO GO';
+    $('fill').style.width = startToNext > 0 ? Math.max(3, Math.min(100, (1 - toNext / startToNext) * 100)) + '%' : '100%';
+    const from = shownToNext ?? toNext, t0 = performance.now(), dur = from === toNext ? 0 : 1200;
+    const step = (t) => { const k = dur ? Math.min(1, (t - t0) / dur) : 1; $('num').textContent = done ? '✓' : fmt(from + (toNext - from) * (1 - Math.pow(1 - k, 3))); if (k < 1) requestAnimationFrame(step); else shownToNext = toNext; };
+    requestAnimationFrame(step);
+  }
+
+  setInterval(() => {
+    if (!nextUpdateAt) { $('timeTag').textContent = ''; return; }
+    const left = Math.max(0, nextUpdateAt - Date.now());
+    const h = Math.floor(left / 3.6e6), m = Math.floor(left / 6e4) % 60, s = Math.floor(left / 1000) % 60;
+    $('timeTag').textContent = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }, 1000);
+
+  // Values from the link
+  render({ tier: q.get('tier') || null, fragments: q.get('frags'), fragmentsTotal: q.get('total'), toNext: q.get('tonext') !== null ? Number(q.get('tonext')) : null });
+
+  // Live values from the bridge
+  const BRIDGE = q.get('bridge') || (/^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? location.origin : 'http://localhost:3000');
+  if (q.get('live') !== '0' && 'EventSource' in window) {
+    try {
+      const es = new EventSource(BRIDGE + '/events');
+      es.addEventListener('state', (e) => { const L = JSON.parse(e.data).leagueProgress; if (L) render(L); });
+    } catch { /* no bridge */ }
+  }
+
+  // Self-update when version.txt changes
+  let loaded = q.get('v');
+  async function check() {
+    try {
+      const r = await fetch(new URL('version.txt?t=' + Date.now(), location.href), { cache: 'no-store' });
+      if (!r.ok) return; const v = (await r.text()).trim(); if (!v) return;
+      if (loaded === null) { loaded = v; return; }
+      if (v !== loaded) { const u = new URL(location.href); u.searchParams.set('v', v); location.replace(u.href); }
+    } catch {}
+  }
+  check(); setInterval(check, 60000);
+})();
+</script>
+</body>
+</html>

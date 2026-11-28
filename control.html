@@ -76,6 +76,26 @@
     </section>
 
     <section class="card">
+      <h2>League</h2>
+      <div class="big" id="lgTier">–</div>
+      <div class="muted" id="lgFrag"></div>
+      <div class="hint" id="lgLine"></div>
+      <p class="hint">From the League tab in LIVE Studio's ranking panel:</p>
+      <form id="leagueForm">
+        <label for="lgTo">Diamonds to next fragment</label>
+        <input id="lgTo" type="number" min="0" inputmode="numeric" placeholder="e.g. 3500">
+        <label for="lgHave">Fragments filled</label>
+        <input id="lgHave" type="number" min="0" max="10" inputmode="numeric" placeholder="e.g. 1">
+        <label for="lgNext">Next update (countdown shown, e.g. 07:35:15)</label>
+        <input id="lgNext" type="text" placeholder="hh:mm:ss">
+        <label for="lgRank">League rank (optional, e.g. 99+)</label>
+        <input id="lgRank" type="text" placeholder="99+">
+        <button type="submit">Sync league</button>
+      </form>
+      <div class="hint" id="lgResult"></div>
+    </section>
+
+    <section class="card">
       <h2>This stream</h2>
       <div class="row"><span class="muted">Points earned</span><b id="sessionPts">0</b></div>
       <div class="row"><span class="muted">Coins received</span><b id="sessionCoins">0</b></div>
@@ -158,8 +178,22 @@
     $('rankCands').innerHTML = rc.length
       ? '<b>Rank data seen in TikTok\'s page (newest first):</b>' + rc.slice(0, 6).map((c) => `<div class="row"><span>#${fmt(c.rank)} · ${escapeHtml(c.scoreKey)} ${fmt(c.score)}${c.isMe ? ' · <b style="color:#3ddc84">looks like yours</b>' : ''}</span><span class="muted" style="font-size:12px">${escapeHtml(c.url.replace(/^https?:\/\/[^/]+/, ''))}</span></div>`).join('')
       : '';
+    lastState = s; renderLeague(s);
     $('rankHint').textContent = s.rankHint ? `Possible rank info spotted in ${s.rankHint.type}: "${s.rankHint.text}"` : '';
   }
+
+  function renderLeague(s) {
+    const L = s.leagueProgress;
+    $('lgTier').textContent = L && L.tier ? L.tier : '–';
+    if (!L || L.toNext === undefined) { $('lgFrag').textContent = 'Tier comes from battles. Sync below for fragments.'; $('lgLine').textContent = ''; return; }
+    const total = L.fragmentsTotal || 3, have = Math.min(total, L.fragments || 0);
+    $('lgFrag').textContent = '◆'.repeat(have) + '◇'.repeat(Math.max(0, total - have)) + `  ${have}/${total} fragments`;
+    const left = L.nextUpdateAt ? Math.max(0, new Date(L.nextUpdateAt) - Date.now()) : null;
+    const hms = left === null ? '' : ` · next update ${String(Math.floor(left / 3.6e6)).padStart(2, '0')}:${String(Math.floor(left / 6e4) % 60).padStart(2, '0')}:${String(Math.floor(left / 1000) % 60).padStart(2, '0')}`;
+    $('lgLine').textContent = (L.reached ? 'Fragment reached! Sync to update' : `${fmt(L.toNext)} diamonds to next fragment`) + (L.rank ? ` · rank ${L.rank}` : '') + hms;
+  }
+  let lastState = null;
+  setInterval(() => { if (lastState) renderLeague(lastState); }, 1000);
 
   function escapeHtml(t) { return String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
@@ -175,6 +209,13 @@
     if (needed !== null) body.goal = points + needed;
     const r = await fetch('/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     $('syncResult').textContent = r.ok ? 'Synced. The banner updates right away.' : 'Sync failed.';
+  });
+
+  $('leagueForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const body = { league: { toNext: Number($('lgTo').value) || 0, fragments: Number($('lgHave').value) || 0, nextUpdate: $('lgNext').value, rank: $('lgRank').value } };
+    const r = await fetch('/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    $('lgResult').textContent = r.ok ? 'League synced.' : 'Sync failed.';
   });
 
   $('testBtn').addEventListener('click', () => fetch('/test/gift', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'FEST Energy', coins: 299, count: 1, user: 'Test viewer' }) }));

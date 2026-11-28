@@ -35,6 +35,7 @@ const DEFAULT_CONFIG = {
   festGifts: ['LIVE FEST 26', 'FEST Explorer', 'FEST Energy', 'FEST Showtime!', 'FEST World'],
   eulerApiKey: '',
   hostUserId: '',
+  leagueSync: null,
   record: true,
   blockVideo: true,
   logRawMessages: true
@@ -55,6 +56,8 @@ const REPLAY_FILE = REPLAY_INDEX > -1 ? process.argv[REPLAY_INDEX + 1] : null;
 const REPLAY_SPEED = Number(process.argv[process.argv.indexOf('--speed') + 1]) || 1;
 const argUser = (process.argv[2] && !process.argv[2].startsWith('--') ? process.argv[2] : '').replace(/^@/, '').trim();
 if (argUser) config.username = argUser;
+// Session coin counts restart at zero, so carry league progress forward from zero too.
+if (config.leagueSync) config.leagueSync.baselineCoins = 0;
 saveConfig();
 
 // ---------------------------------------------------------------- state
@@ -90,6 +93,23 @@ function recalc() {
   state.points.multiplier = Number(config.multiplier) || 2;
   state.points.total = state.points.start + state.points.session;
   state.topGifters = [...gifters.values()].sort((a, b) => b.coins - a.coins).slice(0, 5);
+  const ls = config.leagueSync;
+  if (ls) {
+    const earned = Math.max(0, state.session.coins - (Number(ls.baselineCoins) || 0));
+    const toNext = Math.max(0, (Number(ls.toNext) || 0) - earned);
+    state.leagueProgress = {
+      tier: state.league || ls.tier || null,
+      fragments: Number(ls.fragments) || 0,
+      fragmentsTotal: Number(ls.fragmentsTotal) || 3,
+      toNext,
+      reached: (Number(ls.toNext) || 0) > 0 && toNext === 0,
+      rank: ls.rank || null,
+      nextUpdateAt: ls.nextUpdateAt || null,
+      syncedAt: ls.syncedAt
+    };
+  } else {
+    state.leagueProgress = state.league ? { tier: state.league } : null;
+  }
 }
 
 function setStatus(status, message) {
@@ -172,6 +192,24 @@ const server = http.createServer(async (req, res) => {
     if (body.rank !== undefined) config.rank = body.rank === '' || body.rank === null ? null : Math.max(1, Number(body.rank) || 1);
     if (body.multiplier !== undefined) config.multiplier = Math.max(1, Number(body.multiplier) || 2);
     if (Array.isArray(body.festGifts)) { config.festGifts = body.festGifts.map(String); festNames = festNameSet(); }
+    if (body.league && typeof body.league === 'object') {
+      const L = body.league;
+      const secs = (() => {
+        const m = String(L.nextUpdate || '').trim().match(/^(?:(\d+):)?(\d{1,2}):(\d{2})$/);
+        return m ? (Number(m[1] || 0) * 3600 + Number(m[2]) * 60 + Number(m[3])) : null;
+      })();
+      config.leagueSync = {
+        tier: L.tier ? String(L.tier).toUpperCase().slice(0, 4) : (state.league || null),
+        fragments: Math.max(0, Math.min(10, Number(L.fragments) || 0)),
+        fragmentsTotal: Math.max(1, Math.min(10, Number(L.fragmentsTotal) || 3)),
+        toNext: Math.max(0, Number(L.toNext) || 0),
+        rank: L.rank ? String(L.rank).slice(0, 8) : null,
+        nextUpdateAt: secs !== null ? new Date(Date.now() + secs * 1000).toISOString() : (config.leagueSync?.nextUpdateAt || null),
+        baselineCoins: state.session.coins,
+        syncedAt: new Date().toISOString()
+      };
+      if (config.leagueSync.tier && !state.league) state.league = config.leagueSync.tier;
+    }
     saveConfig();
     broadcast('state', publicState());
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -625,7 +663,7 @@ async function startEuler(apiKey) {
   const STATUS_FILE = path.join(ROOT, 'bridge-status.json');
   setInterval(() => {
     try {
-      fs.writeFileSync(STATUS_FILE, JSON.stringify({ at: new Date().toISOString(), mode: 'euler', ws: wsStats, bridge: state.bridge, points: state.points, session: state.session, room: state.room, battle: state.battle, boost: state.boost, league: state.league || null, lastGift: state.lastGift, messageTypes: state.messageTypes, rankCandidates: state.rankCandidates, rankHint: state.rankHint, debug: eulerLog }, null, 2));
+      fs.writeFileSync(STATUS_FILE, JSON.stringify({ at: new Date().toISOString(), mode: 'euler', ws: wsStats, bridge: state.bridge, points: state.points, session: state.session, room: state.room, battle: state.battle, boost: state.boost, league: state.league || null, leagueProgress: state.leagueProgress || null, lastGift: state.lastGift, messageTypes: state.messageTypes, rankCandidates: state.rankCandidates, rankHint: state.rankHint, debug: eulerLog }, null, 2));
     } catch { /* ignore */ }
   }, 10000);
   const connect = async () => {
