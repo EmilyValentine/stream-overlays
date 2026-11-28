@@ -421,8 +421,13 @@ function handleBattleTask(data) {
     const durationSec = Number(cfg.duration) || elem('dur') || null;
     // The real boost window is announced up front; the later settle message often says 0.
     const plannedStart = toMs(cfg.rewardStartTimestamp) || null;
+    // The mission: targetType 1 = number of gifters, 2 = gift total; progressTarget = how many.
+    const tc = data.start?.config?.targetConfig || {};
+    const missionStartsAt = toMs(tc.targetStartTimestamp) || null;
+    const missionEndsAt = missionStartsAt && Number(tc.duration) ? missionStartsAt + Number(tc.duration) * 1000 : null;
     state.boost = { battleId, side, sideVerified: false, challengeStartedAt: Date.now() };
-    boostEvent('challenge', { multiplier, durationSec, progress: 0, plannedStart });
+    boostEvent('challenge', { multiplier, durationSec, progress: 0, plannedStart,
+      targetType: Number(tc.targetType) || null, target: Number(tc.progressTarget) || null, missionStartsAt, missionEndsAt });
   } else if (kind === 1 && state.boost && state.boost.battleId === battleId && ['challenge', 'progress', 'waiting'].includes(state.boost.phase)) {
     boostEvent(state.boost.phase === 'waiting' ? 'waiting' : 'progress', { progress: Number(data.taskUpdate?.progress) || 0 });
   } else if (kind === 2 && state.boost && state.boost.battleId === battleId) {

@@ -35,7 +35,7 @@
   @keyframes pulse{50%{box-shadow:0 0 0 4px #1a0630,0 0 0 6px rgba(242,196,109,.8),0 0 22px rgba(242,196,109,.45)}}
   .btext{position:absolute;left:130px;top:22px;right:34px}
   .bk{font:800 16px/1 Outfit,sans-serif;letter-spacing:.24em;color:var(--muted)}
-  .bline{margin-top:8px;display:flex;align-items:baseline;gap:12px;white-space:nowrap}
+  .bline{margin-top:8px;display:flex;align-items:baseline;gap:12px;white-space:nowrap;overflow:hidden}
   .bmain{font:700 40px/1 Fredoka,sans-serif;color:var(--blush)}
   .bsub{font:800 18px/1 Outfit,sans-serif;color:var(--muted)}
   .boost.active .bmain{color:var(--gold)}
@@ -136,10 +136,24 @@
       $('bsub').textContent = 'NEXT TIME';
       $('bfill').style.width = '0%';
     } else {
-      $('bk').textContent = 'BOOST CHALLENGE' + side;
-      $('bmain').textContent = b.phase === 'waiting' ? 'DONE!' : 'UNLOCK IT';
-      $('bsub').textContent = b.phase === 'waiting' ? 'WAITING ON THEM' : b.durationSec ? `${b.multiplier ? '×' + b.multiplier + ' ' : ''}FOR ${b.durationSec}s` : '';
-      let p = b.phase === 'waiting' ? 1 : Number(b.progress) || 0; if (p > 1) p = p / 100;
+      // Bonus mission: e.g. "1 gifter" or "10 in gifts" to unlock the next boost.
+      const reward = `${b.multiplier ? '×' + b.multiplier : 'BOOST'}${b.durationSec ? ' FOR ' + b.durationSec + 's' : ''}`;
+      const target = Number(b.target) || 0, prog = Number(b.progress) || 0;
+      const unit = b.targetType === 2 ? 'IN GIFTS' : (target === 1 ? 'GIFTER' : 'GIFTERS');
+      const notYet = b.missionStartsAt && now < b.missionStartsAt;
+      $('bk').textContent = (notYet ? 'BONUS MISSION SOON' : 'BONUS MISSION') + side;
+      if (b.phase === 'waiting') {
+        $('bmain').textContent = 'DONE!';
+        $('bsub').textContent = 'WAITING ON THEM';
+      } else if (target) {
+        $('bmain').textContent = `${Math.min(prog, target)}/${target} ${unit}`;
+        const left = notYet ? b.missionStartsAt - now : b.missionEndsAt ? b.missionEndsAt - now : 0;
+        $('bsub').textContent = `${notYet ? 'IN ' + mmss(left) : left > 0 ? mmss(left) + ' LEFT' : ''} → ${reward}`;
+      } else {
+        $('bmain').textContent = 'UNLOCK IT';
+        $('bsub').textContent = reward;
+      }
+      let p = b.phase === 'waiting' ? 1 : target ? prog / target : prog > 1 ? prog / 100 : prog;
       $('bfill').style.width = Math.max(2, Math.min(100, p * 100)) + '%';
     }
   }
@@ -172,6 +186,10 @@
     stage.appendChild(el); setTimeout(() => el.remove(), 1700);
   }
 
+  if (q.get('demo') === 'mission') {
+    const n = Date.now();
+    boost = { phase: 'progress', multiplier: 3, durationSec: 60, targetType: 1, target: 3, progress: 1, missionStartsAt: n - 5000, missionEndsAt: n + 45000 };
+  }
   if (q.get('demo') === 'firstgift') {
     const go = () => { const n = Date.now(); firstGift = { multiplier: null, startsAt: n, endsAt: n + 55000 }; };
     go(); setInterval(go, 58000);
